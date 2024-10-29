@@ -1,0 +1,27 @@
+.ipynb_checkpoints/
+__pycache__/
+
+# Folders
+best_models/
+results/
+models/
+wandb/
+nbdata/
+logs/
+img/
+configs/
+artifacts/
+dataset/TDC/dti_dg_group/
+dataset/EnzPred
+dataset/TDC/ProtBert_features.h5
+dataset/DAVIS/ProtBert_features.h5
+dataset/DAVIS/ProtBert_features.h5.bak
+# File Types
+**/**.pk
+**/**.h5
+**/**.jupyterlab-workspace
+
+# Large files
+dataset/DUDe/full.tsv
+dataset/DUDe/full_OLD.tsv
+large_scale_run.tsv

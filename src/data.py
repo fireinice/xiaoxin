@@ -49,7 +49,7 @@ def get_task_dir(task_name: str):
         "esterase": "./dataset/EnzPred/esterase_binary",
         "kinase": "./dataset/EnzPred/davis_filtered",
         "phosphatase": "./dataset/EnzPred/phosphatase_chiral_binary",
-        "bingdingdb_v2":"./dataset/BingdingDB_v2"
+        "bindingdb_v2":"./dataset/BingdingDB_v2"
     }
 
     return Path(task_paths[task_name.lower()]).resolve()

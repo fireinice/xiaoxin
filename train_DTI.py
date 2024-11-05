@@ -66,6 +66,7 @@ parser.add_argument(
         "biosnap_prot",
         "biosnap_mol",
         "dti_dg",
+        "bindingdb_v2"
     ],
     type=str,
     help="Task name. Could be biosnap, bindingdb, davis, biosnap_prot, biosnap_mol.",
@@ -233,7 +234,7 @@ def main():
         config.target_featurizer, per_tok=per_tok, save_dir=task_dir
     )
 
-    if config.task in ("bingdingdb_v2","dti_dg") :
+    if config.task in ("bindingdb_v2","dti_dg") :
         config.classify = False
         config.watch_metric = "val/pcc"
         datamodule = TDCDataModule(
@@ -363,7 +364,7 @@ def main():
     max_metric = 0
     model_max = copy.deepcopy(model)
 
-    if config.task == "dti_dg":
+    if config.task in("dti_dg","bindingdb_v2"):
         loss_fct = torch.nn.MSELoss()
         val_metrics = {
             "val/mse": torchmetrics.MeanSquaredError,

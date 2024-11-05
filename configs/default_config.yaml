@@ -1,4 +1,4 @@
-task: bingdingdb_v2
+task: bindingdb_v2
 contrastive_split: within
 drug_featurizer: MorganFeaturizer
 target_featurizer: ProtBertFeaturizer

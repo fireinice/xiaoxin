@@ -144,7 +144,7 @@ class Featurizer:
 
             #dset = h5fi.create_dataset(seq_h5, shape=feats.shape,data=feats.cpu().numpy())
             for key, value in tqdm(features.items(), disable=not verbose, desc=self.name):
-                dset = h5fi.create_dataset(key, shape=value.shape,data=value, dtype=np.float32)
+                dset = h5fi.create_dataset(key, shape=value.shape,data=value, dtype=np.float32,compression='gzip', compression_opts=8)
 
     def preload(
         self,
@@ -158,7 +158,7 @@ class Featurizer:
             self.write_to_disk(seq_list, verbose=verbose)
 
         if self._save_path.exists():
-            with h5py.File(self._save_path, "r") as h5fi:
+            with h5py.File(self._save_path, "r",libver='latest') as h5fi:
                 for seq in tqdm(seq_list, disable=not verbose, desc=self.name):
                     if seq in h5fi:
                         seq_h5 = sanitize_string(seq)

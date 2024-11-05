@@ -11,3 +11,4 @@ dscript
 pysmiles
 deepchem
 pytorch_lightning
+dgl

@@ -125,12 +125,12 @@ class ProtBertFeaturizer(Featurizer):
 
 
         self._protbert_tokenizer = AutoTokenizer.from_pretrained(
-            "/mnt/workspace/yongbo/xiaoxin/ConPLex_dev/models/probert",
+            "./models/probert",
             do_lower_case=False,
             #cache_dir=f"{MODEL_CACHE_DIR}/huggingface/transformers",
         )
         self._protbert_model = AutoModel.from_pretrained(
-            "/mnt/workspace/yongbo/xiaoxin/ConPLex_dev/models/probert",
+            "./models/probert",
             #cache_dir=f"{MODEL_CACHE_DIR}/huggingface/transformers",
         )
         self._protbert_feat = pipeline(

@@ -1,7 +1,7 @@
 import copy
 from time import time
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '5,6'
+#os.environ["CUDA_VISIBLE_DEVICES"] = '5,6'
 
 import sys
 import numpy as np
@@ -233,7 +233,7 @@ def main():
         config.target_featurizer, per_tok=per_tok, save_dir=task_dir
     )
 
-    if config.task == "dti_dg":
+    if config.task in ("bingdingdb_v2","dti_dg") :
         config.classify = False
         config.watch_metric = "val/pcc"
         datamodule = TDCDataModule(

@@ -1088,9 +1088,9 @@ class DrugProteinAttention(nn.Module):
         att_mask = self.get_att_mask(target)
 
         outputs = self.transformer_encoder(inputs,src_key_padding_mask=att_mask)
-        #out_embedding = self.pooler(outputs)
+        out_embedding = self.pooler(outputs)
 
-        out_embedding = torch.max(outputs, dim=1)[0]
+        #out_embedding = torch.max(outputs, dim=1)[0]
 
         x = self.mlp(out_embedding)
         predict = self.predict_layer(x)

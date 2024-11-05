@@ -49,6 +49,7 @@ def get_task_dir(task_name: str):
         "esterase": "./dataset/EnzPred/esterase_binary",
         "kinase": "./dataset/EnzPred/davis_filtered",
         "phosphatase": "./dataset/EnzPred/phosphatase_chiral_binary",
+        "bingdingdb_v2":"./dataset/BingdingDB_v2"
     }
 
     return Path(task_paths[task_name.lower()]).resolve()
@@ -430,7 +431,7 @@ class TDCDataModule(pl.LightningDataModule):
         dg_name = dg_benchmark["name"]
 
         self.df_train, self.df_val = dg_group.get_train_valid_split(
-            benchmark=dg_name, split_type="default", seed=self._seed
+            benchmark=dg_name, split_type="random", seed=self._seed
         )
         self.df_test = dg_benchmark["test"]
 

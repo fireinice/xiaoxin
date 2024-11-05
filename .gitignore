@@ -9,13 +9,13 @@ wandb/
 nbdata/
 logs/
 img/
-configs/
 artifacts/
 dataset/TDC/dti_dg_group/
 dataset/EnzPred
 dataset/TDC/ProtBert_features.h5
 dataset/DAVIS/ProtBert_features.h5
 dataset/DAVIS/ProtBert_features.h5.bak
+dataset/BingdingDB_v2/
 # File Types
 **/**.pk
 **/**.h5

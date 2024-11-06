@@ -130,6 +130,8 @@ class Featurizer:
 
         logg.info("start to transform features:")
 
+        count = 0
+
         for seq in tqdm(seq_list, disable=not verbose, desc=self.name):
             seq_h5 = sanitize_string(seq)
             if seq_h5 in features:
@@ -137,14 +139,20 @@ class Featurizer:
 
             feats = self.transform(seq)
             features[seq_h5] = feats.cpu().numpy()
+            count +=1
+            if count > 1000000:
+                break
          
 
         logg.info("start to save features:")
         with h5py.File(self._save_path, "a",libver='latest') as h5fi:
 
             #dset = h5fi.create_dataset(seq_h5, shape=feats.shape,data=feats.cpu().numpy())
+
+            group = h5fi.create_group("root")
+
             for key, value in tqdm(features.items(), disable=not verbose, desc=self.name):
-                dset = h5fi.create_dataset(key, shape=value.shape,data=value, dtype=np.float32,compression='gzip', compression_opts=8)
+                dset = group.create_dataset(key, shape=value.shape,data=value, dtype=np.float32,compression='gzip', compression_opts=8)
 
     def preload(
         self,
@@ -158,13 +166,18 @@ class Featurizer:
             self.write_to_disk(seq_list, verbose=verbose)
 
         if self._save_path.exists():
-            with h5py.File(self._save_path, "r",libver='latest') as h5fi:
+            with h5py.File(self._save_path, "r") as h5fi:
+
+                group = h5fi['root']
+                #keys = group.keys()
                 for seq in tqdm(seq_list, disable=not verbose, desc=self.name):
-                    if seq in h5fi:
-                        seq_h5 = sanitize_string(seq)
-                        feats = torch.from_numpy(h5fi[seq_h5][:])
+                    seq_h5 = sanitize_string(seq)
+                    if seq_h5 in group:
+                        
+                        feats = torch.from_numpy(group[seq_h5][:])
                         #logg.info(f"feats length: {feats.shape}")
                     else:
+                        #not found
                         feats = self.transform(seq)
 
                     if self._on_cuda:

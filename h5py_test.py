@@ -4,14 +4,15 @@ from tqdm import tqdm
 
 
 def writeh5():
-    with h5py.File("test.h5", "a") as h5fi:
+    with h5py.File("test.h5", "a",libver='latest') as h5fi:
 
-        h5fi.create_group("bar")
+        group = h5fi.create_group("bar")
+        data = np.ones((2048))
 
-        for i in tqdm(range(0, 1000000), desc="test"):
-            data = np.ones((100))
+        for i in tqdm(range(0, 500000), desc="write"):
+           
             index = f"index{i}"
-            h5fi[index] = data
+            group.create_dataset(index,data.shape,dtype=np.float32,data=data)
 
 
 def readh5():
@@ -20,21 +21,22 @@ def readh5():
 
         keys = group.keys()
 
-        print(keys)
+        for key in tqdm(keys,  desc="read"):
+            data = group[key]
 
-        data = group['index0']
+def test_read():
 
-        print(data)
+    with h5py.File('dataset/BingdingDB_v2/Morgan_features.h5', "r",libver='latest') as h5fi:
 
-        for key in keys:
+        group = h5fi['root']
+        keys = group.keys()
 
-            data = h5fi[key]
+        for key in tqdm(keys,  desc="read"):
+            data = group[key]
 
-            print(data)
-
-
-
-writeh5()
+test_read()
+#writeh5()
+#readh5()
 
 
 

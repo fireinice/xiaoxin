@@ -48,7 +48,7 @@ parser.add_argument(
     "--exp-id", help="Experiment ID", dest="experiment_id", default='yongbo_dti_dg',
 )
 parser.add_argument(
-    "--config", help="YAML config file", default="configs/default_config.yaml"
+    "--config", help="YAML config file", default="configs/multiclass_config.yaml"
 )
 
 parser.add_argument(
@@ -66,7 +66,8 @@ parser.add_argument(
         "biosnap_prot",
         "biosnap_mol",
         "dti_dg",
-        "bindingdb_v2"
+        "bindingdb_v2",
+        "bindingdb_multi_class"
     ],
     type=str,
     help="Task name. Could be biosnap, bindingdb, davis, biosnap_prot, biosnap_mol.",
@@ -114,20 +115,19 @@ parser.add_argument(
 def test(model, data_generator, metrics, device=None, classify=True):
 
     if device is None:
+        logg.warning("device is cpu!")
         device = torch.device("cpu")
 
-    metric_dict = {}
 
-    for k, met_class in metrics.items():
-        if classify:
-            met_instance = met_class(task="binary")
-        else:
-            met_instance = met_class()
-        met_instance.to(device)
-        met_instance.reset()
-        metric_dict[k] = met_instance
-
+    for k, metric in metrics.items():
+        metric = metric.to(device)
+        metric.reset()
+        metrics[k] = metric
     model.eval()
+
+    data_len = len(data_generator)
+
+    logg.info(f"start to compute metric , total samples : {data_len}")
 
     for i, batch in tqdm(enumerate(data_generator), total=len(data_generator)):
 
@@ -137,16 +137,16 @@ def test(model, data_generator, metrics, device=None, classify=True):
         else:
             label = label.float()
 
-        for _, met_instance in metric_dict.items():
-            met_instance(pred, label)
+        for _, metric in metrics.items():
+            metric(pred, label)
 
     results = {}
-    for (k, met_instance) in metric_dict.items():
-        res = met_instance.compute()
+    for (k, metric) in metrics.items():
+        res = metric.compute()
         results[k] = res
 
-    for met_instance in metric_dict.values():
-        met_instance.to("cpu")
+    for metric in metrics.values():
+        metric.to("cpu")
 
     return results
 
@@ -157,7 +157,14 @@ def step(model, batch, device=None):
         device = torch.device("cpu")
 
     drug, target, label = batch  # target is (D + N_pool)
-    pred = model(drug.to(device), target.to(device))
+    try:
+        pred = model(drug.to(device), target.to(device))
+    except Exception as e:
+        logg.error(f"Testing failed with exception {e}")
+        print('drug:',drug)
+        print('drug:',target)
+        print('drug:',label)
+        raise ValueError("failed")
     label = Variable(torch.from_numpy(np.array(label)).float()).to(device)
     return pred, label
 
@@ -213,11 +220,6 @@ def main():
     logg.debug(f"Setting random state {config.replicate}")
     set_random_seed(config.replicate)
 
-
-
-   
-
-
     # Load DataModule
     logg.info("Preparing DataModule")
     task_dir = get_task_dir(config.task)
@@ -247,6 +249,21 @@ def main():
             shuffle=config.shuffle,
             num_workers=config.num_workers,
         )
+    elif config.task in ("bindingdb_multi_class") :
+
+        config.classify = True
+        config.watch_metric = "val/aupr"
+        datamodule = TDCDataModule(
+            task_dir,
+            drug_featurizer,
+            target_featurizer,
+            device=device,
+            seed=config.replicate,
+            batch_size=config.batch_size,
+            shuffle=config.shuffle,
+            num_workers=config.num_workers,
+        )
+
     elif config.task in EnzPredDataModule.dataset_list():
         config.classify = True
         config.watch_metric = "val/aupr"
@@ -287,13 +304,26 @@ def main():
 
     # Model
     logg.info("Initializing model")
-    model = getattr(model_types, config.model_architecture)(
-        config.drug_shape,
-        config.target_shape,
-        latent_dimension=config.latent_dimension,
-        latent_distance=config.latent_distance,
-        classify=config.classify,
-    )
+
+    if config.task == 'bindingdb_multi_class':
+
+        model = getattr(model_types, config.model_architecture)(
+            config.drug_shape,
+            config.target_shape,
+            latent_dimension=config.latent_dimension,
+            latent_distance=config.latent_distance,
+            classify=config.classify,
+            num_classes=config.num_classes
+        )
+    else:
+
+        model = getattr(model_types, config.model_architecture)(
+            config.drug_shape,
+            config.target_shape,
+            latent_dimension=config.latent_dimension,
+            latent_distance=config.latent_distance,
+            classify=config.classify,
+        )
     if "checkpoint" in config:
         state_dict = torch.load(config.checkpoint)
         model.load_state_dict(state_dict)
@@ -333,9 +363,6 @@ def main():
         contrastive_datamodule.prepare_data()
         contrastive_datamodule.setup(stage="fit")
         contrastive_generator = contrastive_datamodule.train_dataloader()
-
-  
-
     
 
     # Optimizers
@@ -367,24 +394,41 @@ def main():
     if config.task in("dti_dg","bindingdb_v2"):
         loss_fct = torch.nn.MSELoss()
         val_metrics = {
-            "val/mse": torchmetrics.MeanSquaredError,
-            "val/pcc": torchmetrics.PearsonCorrCoef,
+            "val/mse": torchmetrics.MeanSquaredError(),
+            "val/pcc": torchmetrics.PearsonCorrCoef(),
         }
 
         test_metrics = {
-            "test/mse": torchmetrics.MeanSquaredError,
-            "test/pcc": torchmetrics.PearsonCorrCoef,
+            "test/mse": torchmetrics.MeanSquaredError(),
+            "test/pcc": torchmetrics.PearsonCorrCoef(),
         }
+    elif  config.task in ("bindingdb_multi_class"):
+
+        loss_fct = torch.nn.CrossEntropyLoss()
+        val_metrics = {
+            "val/class_accuracy": torchmetrics.classification.MulticlassAccuracy(num_classes=7,average=None),
+            "val/class_recall": torchmetrics.classification.MulticlassRecall(num_classes=7, average=None),
+            "val/aupr":torchmetrics.classification.MulticlassAveragePrecision(num_classes=7),
+            "val/ConfusionMatrix":torchmetrics.ConfusionMatrix(task="multiclass", num_classes=7)
+        }
+
+        test_metrics = {
+            "test/class_accuracy": torchmetrics.classification.MulticlassAccuracy(num_classes=7,average=None),
+            "test/class_recall": torchmetrics.classification.MulticlassRecall(num_classes=7, average=None),
+            "test/aupr":torchmetrics.classification.MulticlassAveragePrecision(num_classes=7),
+            "test/ConfusionMatrix":torchmetrics.ConfusionMatrix(task="multiclass", num_classes=7)
+        }
+
     else:
         loss_fct = torch.nn.BCELoss()
         val_metrics = {
-            "val/aupr": torchmetrics.AveragePrecision,
-            "val/auroc": torchmetrics.AUROC,
+            "val/aupr": torchmetrics.AveragePrecision(task="binary"),
+            "val/auroc": torchmetrics.AUROC(task="binary"),
         }
 
         test_metrics = {
-            "test/aupr": torchmetrics.AveragePrecision,
-            "test/auroc": torchmetrics.AUROC,
+            "test/aupr": torchmetrics.AveragePrecision(task="binary"),
+            "test/auroc": torchmetrics.AUROC(task="binary"),
         }
 
     # Initialize wandb
@@ -420,6 +464,10 @@ def main():
             pred, label = step(
                 model, batch, device
             )  # batch is (2048, 1024, 1)
+
+
+            if config.classify:
+                label = label.to(torch.int64)
 
             loss = loss_fct(pred, label)
             
@@ -576,6 +624,59 @@ def main():
                 for k, v in val_results.items():
                     if not k.startswith("_"):
                         logg.info(f"{k}: {v}")
+        
+
+        # Testing
+        logg.info("Beginning testing")
+        try:
+            with torch.set_grad_enabled(False):
+                model_max = model_max.eval()
+
+                test_start_time = time()
+                test_results = test(
+                    model_max,
+                    testing_generator,
+                    test_metrics,
+                    device,
+                    config.classify,
+                )
+                test_end_time = time()
+
+                test_results["epoch"] = epo + 1
+                test_results["test/eval_time"] = test_end_time - test_start_time
+                test_results["Charts/wall_clock_time"] = 0
+                #wandb_log(test_results, do_wandb)
+
+                logg.info("epoch Testing")
+                for k, v in test_results.items():
+                    if not k.startswith("_"):
+                        logg.info(f"{k}: {v}")
+
+                #model_save_path = Path(
+                    #f"{save_dir}/{config.experiment_id}_best_model.pt"
+                #)
+                #torch.save(
+                   # model_max.state_dict(),
+                    #model_save_path,
+                #)
+                #logg.info(f"Saving final model to {model_save_path}")
+                """
+
+                if do_wandb:
+                    art = wandb.Artifact(
+                        f"dti-{config.experiment_id}", type="model"
+                    )
+                    art.add_file(model_save_path, model_save_path.name)
+                    wandb.log_artifact(art, aliases=["best"])
+
+                    
+                """
+
+            
+
+        except Exception as e:
+            logg.error(f"Testing failed with exception {e}")
+
 
     end_time = time()
 

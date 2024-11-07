@@ -49,7 +49,8 @@ def get_task_dir(task_name: str):
         "esterase": "./dataset/EnzPred/esterase_binary",
         "kinase": "./dataset/EnzPred/davis_filtered",
         "phosphatase": "./dataset/EnzPred/phosphatase_chiral_binary",
-        "bindingdb_v2":"./dataset/BingdingDB_v2"
+        "bindingdb_v2":"./dataset/BingdingDB_v2",
+        "bindingdb_multi_class":"./dataset/BindingDB_multi_class"
     }
 
     return Path(task_paths[task_name.lower()]).resolve()
@@ -73,7 +74,12 @@ def drug_target_collate_fn(
     t_emb = [a[1] for a in args]
     labs = [a[2] for a in args]
 
-    drugs = torch.stack(d_emb, 0)
+    try:
+        drugs = torch.stack(d_emb, 0)
+    except Exception as e:
+        logg.error(f"Testing failed with exception {e}")
+        print(d_emb)
+
     targets = pad_sequence(
         t_emb, batch_first=True, padding_value=FOLDSEEK_MISSING_IDX
     )

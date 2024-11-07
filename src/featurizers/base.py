@@ -152,7 +152,7 @@ class Featurizer:
             group = h5fi.create_group("root")
 
             for key, value in tqdm(features.items(), disable=not verbose, desc=self.name):
-                dset = group.create_dataset(key, shape=value.shape,data=value, dtype=np.float32,compression='gzip', compression_opts=8)
+                dset = group.create_dataset(key, shape=value.shape,data=value, dtype=np.float32)
 
     def preload(
         self,
@@ -166,10 +166,13 @@ class Featurizer:
             self.write_to_disk(seq_list, verbose=verbose)
 
         if self._save_path.exists():
-            with h5py.File(self._save_path, "r") as h5fi:
+            with h5py.File(self._save_path, "r",libver='latest') as h5fi:
 
                 group = h5fi['root']
                 #keys = group.keys()
+
+                #keys = dict(zip(keys,[0]*len(keys)))
+
                 for seq in tqdm(seq_list, disable=not verbose, desc=self.name):
                     seq_h5 = sanitize_string(seq)
                     if seq_h5 in group:

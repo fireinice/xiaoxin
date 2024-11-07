@@ -16,6 +16,7 @@ dataset/TDC/ProtBert_features.h5
 dataset/DAVIS/ProtBert_features.h5
 dataset/DAVIS/ProtBert_features.h5.bak
 dataset/BingdingDB_v2/
+dataset/BindingDB_multi_class
 # File Types
 **/**.pk
 **/**.h5

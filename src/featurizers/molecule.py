@@ -33,6 +33,36 @@ MODEL_CACHE_DIR = Path(
 )
 
 
+from transformers import AutoTokenizer, AutoModel
+
+class ChemBERTaFeaturizer(Featurizer):
+    def __init__(
+            self,
+            shape: int = 768,
+            radius: int = 2,
+            save_dir: Path = Path().absolute(),
+    ):
+        super().__init__("ChemBERTa", shape, save_dir)
+
+        self.tokenizer = AutoTokenizer.from_pretrained('/root/ConPLex_dev-main/download_chemberta/')
+
+    def smiles_to_chemberta(self, smile: str) -> torch.Tensor:
+
+        smile = canonicalize(smile)
+        inputs = self.tokenizer(smile, return_tensors="pt")
+        return inputs
+    
+    def _transform(self, smile: str) -> torch.Tensor:
+        feats = self.smiles_to_chemberta(smile)
+#        print(feats.shape)
+
+        if feats.shape[-1] != self.shape:
+            logg.warning("Failed to featurize: appending zero vector")
+            feats = torch.zeros(self.shape)
+
+        return feats
+
+
 class Mol2VecFeaturizer(Featurizer):
     def __init__(self, radius: int = 1, save_dir: Path = Path().absolute()):
         super().__init__("Mol2Vec", 300)

@@ -16,6 +16,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch import nn,einsum
 import math
 
+
 logg = get_logger()
 
 #################################
@@ -987,12 +988,14 @@ class DrugProteinAttention(nn.Module):
         latent_activation=nn.ReLU,
         latent_distance="Cosine",
         classify=True,
+        num_classes=2
     ):
         super().__init__()
         self.drug_shape = drug_shape
         self.target_shape = target_shape
         self.latent_dimension = latent_dimension
         self.do_classify = classify  
+        self.num_classes=num_classes
 
 
         self.pooler = BertPooler(latent_dimension) 
@@ -1010,23 +1013,23 @@ class DrugProteinAttention(nn.Module):
         #nn.init.xavier_normal_(self.target_projector[0].weight)
 
         self.input_norm = nn.LayerNorm(latent_dimension)
-
-
-
-
-
         encoder_layer = nn.TransformerEncoderLayer(d_model=latent_dimension, nhead=16,batch_first=True)
 
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=3)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=1)
         
 
         self.mlp = MLP(latent_dimension, 512, 256)
 
         if classify:
 
-            self.predict_layer = nn.Sequential(
+            if self.num_classes == 2:
+                 self.predict_layer = nn.Sequential(
                  nn.Linear(256, 1, bias=True),
                  nn.Sigmoid(),
+            )
+            else:
+                 self.predict_layer = nn.Sequential(
+                 nn.Linear(256, self.num_classes, bias=True),
             )
         else:
             self.predict_layer = nn.Sequential(
@@ -1238,81 +1241,126 @@ class DrugProteinMLP(nn.Module):
         predict = torch.squeeze(predict,dim=-1)
         return predict
 
+class ChemBertaProteinAttention(nn.Module):
 
-class DrugProteinAttention2(nn.Module):
     def __init__(
             self,
-            embed_dim=1024,
-            num_heads=4,
-            num_layers=1,
-            dropout=0.1,
-            drug_shape=2048,
+            drug_shape=768,
+            target_shape=1024,
             latent_dimension=1024,
             latent_activation=nn.ReLU,
             latent_distance="Cosine",
             classify=True,
+            num_classes=2
     ):
-        super(DrugProteinAttention2, self).__init__()
+        super().__init__()
 
-        self.embed_dim = embed_dim
+        self.chembert =  AutoModelForMaskedLM.from_pretrained("./models/chemberta")
         self.drug_shape = drug_shape
+        self.target_shape = target_shape
         self.latent_dimension = latent_dimension
         self.do_classify = classify
 
-        # 药物特征投影
+        self.pooler = BertPooler(latent_dimension)
+
         self.drug_projector = nn.Sequential(
-            nn.Linear(self.drug_shape, self.latent_dimension), latent_activation()
+            nn.Linear(self.drug_shape, latent_dimension)
+        )
+        # nn.init.xavier_normal_(self.drug_projector[0].weight)
+        self.target_projector = nn.Sequential(
+            nn.Linear(self.target_shape, latent_dimension)
         )
 
-        # Transformer 编码器
-        encoder_layer = nn.TransformerEncoderLayer(1024, nhead=16, dropout=dropout)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        # self.position = PositionalEncoding(d_model=latent_dimension,max_len=latent_dimension)
+        # nn.init.xavier_normal_(self.target_projector[0].weight)
 
-        # 位置嵌入
-        self.positional_encoding = PositionalEncoding()
+        self.input_norm = nn.LayerNorm(latent_dimension)
 
-        # 分类任务的激活器
-        if self.do_classify:
-            self.distance_metric = latent_distance
-            self.activator = DISTANCE_METRICS[self.distance_metric]()
+        self.cross_attn = nn.MultiheadAttention(embed_dim=self.latent_dimension, num_heads=16,dropout=0.1,batch_first=True)
+        self.max_pool = nn.AdaptiveMaxPool1d(1)
 
-        # 用于回归的最后层
-        self.last_layers = nn.Linear(1, 1)
+        # self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=3)
 
-    def forward(self, drug_emb, protein_emb, padding_mask=None):
-    
-        drug_emb = self.drug_projector(drug_emb)  # [16, 1024]
-        drug_emb = drug_emb.unsqueeze(1)  # 变为 [16, 1, 1024]
-    
-        # 拼接后形状为 [16, 1023, 1024]
-        combined_emb = torch.cat([drug_emb, protein_emb], dim=1)
-        # 添加位置嵌入
-        combined_emb = self.positional_encoding(combined_emb)
-    
-        # 通过 Transformer 编码器，传递 padding_mask
-        transformer_output = self.transformer_encoder(
-            combined_emb.permute(1, 0, 2),
-            src_key_padding_mask=padding_mask
-        )
-        # 取出 cls token 对应的输出
-        drug_projection = transformer_output[0]
-        target_projection = transformer_output[1:, :].mean(0)
-    
-        if self.do_classify:
-            return self.classify(drug_projection, target_projection)
+        self.mlp = MLP(latent_dimension*2, 512, 256)
+
+        if classify:
+
+            if self.num_classes == 2:
+                 self.predict_layer = nn.Sequential(
+                 nn.Linear(256, 1, bias=True),
+                 nn.Sigmoid(),
+            )
+            else:
+                 self.predict_layer = nn.Sequential(
+                 nn.Linear(256, self.num_classes, bias=True),
+            )
         else:
-            return self.regress(drug_projection, target_projection)
+            self.predict_layer = nn.Sequential(
+                 nn.Linear(256, 1, bias=True),
+                 nn.ReLU(),
+            ) 
+
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module):
+        """Initialize the weights"""
+        initializer_range = 0.02
+        if isinstance(module, nn.Linear):
+            # Slightly different from the TF version which uses truncated_normal for initialization
+            # cf https://github.com/pytorch/pytorch/pull/5617
+            torch.nn.init.xavier_normal_(module.weight.data)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.xavier_normal_(module.weight.data)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+
+    def get_att_mask(self, drug:torch.Tensor):
+        batch, seq, dim = drug.shape
+
+        mask = torch.mean(drug, dim=-1)
+        mask = torch.where(mask != 0.0, False, True)
+        return mask
+
+    def forward(self, drug: torch.Tensor, target: torch.Tensor):
+
+        batch, seq, dim = drug.shape
+
+        b, n, d = target.shape
+
+        drug_projection = self.drug_projector(drug)
+        # target_proje ction = self.target_projector(target)
+        target_projection = target
+
+        # drug_projection = drug_projection.unsqueeze(1)
+        # inputs = torch.concat([drug_projection, target_projection], dim=1)
+
+        drug_projection = self.input_norm(drug_projection)
+
+        # inputs = self.position(inputs)
+
+        drug_att_mask = self.get_att_mask(drug_projection)
+        target_att_mask = self.get_att_mask(target_projection)
 
 
-    def regress(self, drug_projection, target_projection):
-        output = torch.einsum("bd,bd->b", drug_projection, target_projection)
-        distance = torch.nn.ReLU()(output)
-        return distance
+        drug_output , _ = self.cross_attn(drug_projection,target_projection,target_projection,key_padding_mask=target_att_mask)
+        target_ouput, _ = self.cross_attn(target_projection,drug_projection,drug_projection,key_padding_mask=drug_att_mask)
 
-    def classify(self, drug_projection, target_projection):
-        distance = self.activator(drug_projection, target_projection)
-        sigmoid_f = torch.nn.Sigmoid()
-        return sigmoid_f(distance).squeeze()
+        # out_embedding = self.pooler()
+        drug_output = self.max_pool(drug_output).squeeze()
+        target_ouput = self.max_pool(target_ouput).squeezze()
 
+        out_embedding = torch.concat([drug_output,target_ouput],dim=-1)
 
+        # out_embedding = torch.max(outputs, dim=1)[0]
+
+        x = self.mlp(out_embedding)
+        predict = self.predict_layer(x)
+
+        predict = torch.squeeze(predict, dim=-1)
+        return predict
 

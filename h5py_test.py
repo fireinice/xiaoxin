@@ -30,7 +30,6 @@ def test_read():
 
         group = h5fi['root']
         keys = group.keys()
-
         for key in tqdm(keys,  desc="read"):
             data = group[key]
 

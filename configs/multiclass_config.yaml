@@ -1,11 +1,11 @@
-task: bindingdb_v2
+task: bindingdb_multi_class
 contrastive_split: within
 drug_featurizer: MorganFeaturizer
 target_featurizer: ProtBertFeaturizer
-model_architecture: SimpleCoembeddingSigmoid
+model_architecture: DrugProteinAttention
 latent_dimension: 1024
 latent_distance: "Cosine"
-
+num_classes: 7
 batch_size: 512
 contrastive_batch_size: 256
 shuffle: True

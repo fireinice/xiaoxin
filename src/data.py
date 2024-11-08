@@ -8,6 +8,7 @@ import pickle as pk
 import pandas as pd
 import pytorch_lightning as pl
 
+from functools import partial
 
 from types import SimpleNamespace
 from tqdm import tqdm
@@ -832,6 +833,48 @@ class CustomDataset(Dataset):
         label = item['Y']
         return drug, target, label
 
+
+
+def _collate_fn(batch, drug_featurizer, target_featurizer,token_cache):
+
+
+    drugs = []
+    targets = []
+    labels = []
+
+
+    for item in batch:
+        drug, target, label = item
+        drugs.append(drug)
+
+        if target not in token_cache:
+            target_embedding = target_featurizer._tokenizer(target) 
+            token_cache[target] = target_embedding
+        else:
+            target_embedding = token_cache[target]
+        targets.append(target_embedding)
+        labels.append(label)
+    
+
+    drug_tokens = drug_featurizer._tokenizer(drugs)
+
+    new_drug_tokens = {}
+    new_drug_tokens['drug_input_ids'] = drug_tokens['input_ids']
+    new_drug_tokens['drug_att_masks'] = drug_tokens['attention_mask']
+
+
+    targets = pad_sequence(
+                            targets, batch_first=True, padding_value=FOLDSEEK_MISSING_IDX
+                        )
+
+    
+
+    labels =  torch.from_numpy(np.array(labels))
+
+    return new_drug_tokens,targets,labels
+
+
+
 class CSVDataModule(pl.LightningDataModule):
     def __init__(
         self,
@@ -896,6 +939,8 @@ class CSVDataModule(pl.LightningDataModule):
 
     def collate_fn(self,drug_featurizer,target_featurizer,token_cache):
 
+        return partial(_collate_fn, drug_featurizer=drug_featurizer,target_featurizer=target_featurizer,token_cache=token_cache)
+
 
         def _fn(batch):
 
@@ -908,6 +953,12 @@ class CSVDataModule(pl.LightningDataModule):
             for item in batch:
                 drug, target, label = item
                 drugs.append(drug)
+
+                if target not in token_cache:
+                    target_embedding = target_featurizer._tokenizer(target) 
+                    token_cache[target] = target_embedding
+                else:
+                    target_embedding = token_cache[target]
                 targets.append(target)
                 labels.append(label)
             
@@ -919,14 +970,11 @@ class CSVDataModule(pl.LightningDataModule):
             drug_tokens.pop("input_ids")
             drug_tokens.pop("attention_mask")
 
-            target_tokens = target_featurizer._tokenizer(targets)
+            targets = pad_sequence(
+                                    targets, batch_first=True, padding_value=FOLDSEEK_MISSING_IDX
+                                )
 
-            target_tokens["target_input_ids"] = target_tokens['input_ids']
-            target_tokens["target_att_masks"] = target_tokens['attention_mask']
-            target_tokens.pop("input_ids")
-            target_tokens.pop("attention_mask")
-
-            target_tokens.pop("token_type_ids")
+            
 
             labels =  torch.from_numpy(np.array(labels))
 

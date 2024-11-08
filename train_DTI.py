@@ -17,7 +17,7 @@ import typing as T
 import torchmetrics
 from argparse import ArgumentParser
 
-import wandb
+#import wandb
 from omegaconf import OmegaConf
 from pathlib import Path
 
@@ -159,10 +159,22 @@ def step(model, batch, device=None, is_train=True):
         device = torch.device("cpu")
 
     drug, target, label = batch  # target is (D + N_pool)
-    drug = drug.to(device)
+
+    if isinstance(drug,dict):
+
+        for k,v in drug.items():
+            drug[k] = v.to(device)
+    else:
+        drug = drug.to(device)
+
     target = target.to(device)
     try:
-        pred = model(**drug, **target, is_train=is_train)
+
+        if isinstance(drug,dict):
+            
+            pred = model(drug['drug_input_ids'], drug['drug_att_masks'], target, is_train=is_train)
+        else:
+            pred = model(drug, target, is_train=is_train)
     except Exception as e:
         logg.error(f"failed with exception {e}")
         print('drug:',drug)
@@ -203,6 +215,8 @@ def ordinal_regression_loss(y_pred, y_target):
 
 def main():
     # Get configuration
+
+
     args = parser.parse_args()
     config = OmegaConf.load(args.config)
     arg_overrides = {k: v for k, v in vars(args).items() if v is not None}
@@ -239,7 +253,7 @@ def main():
 
     drug_featurizer = get_featurizer(config.drug_featurizer, save_dir=task_dir)
 
-    if config.model_architecture in ('DrugProteinAttention','DrugProteinMLP'):
+    if config.model_architecture in ('DrugProteinAttention','DrugProteinMLP','ChemBertaProteinAttention'):
         per_tok=True
     else:
         per_tok=False
@@ -484,7 +498,7 @@ def main():
 
     logg.info("Beginning Training")
 
-    torch.backends.cudnn.benchmark = True
+    #torch.backends.cudnn.benchmark = True
 
     # Begin Training
     start_time = time()
@@ -768,5 +782,7 @@ def main():
 
     return model_max
 
+if __name__ == "__main__":
 
-best_model = main()
+    torch.multiprocessing.set_start_method('spawn')
+    best_model = main()

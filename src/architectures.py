@@ -1298,7 +1298,7 @@ class ChemBertaProteinAttention(nn.Module):
         # self.position = PositionalEncoding(d_model=latent_dimension,max_len=latent_dimension)
         # nn.init.xavier_normal_(self.target_projector[0].weight)
         
-        self.target_model = AutoModel.from_pretrained('./models/probert')
+       #self.target_model = AutoModel.from_pretrained('./models/probert')
         self.drug_model = AutoModel.from_pretrained('./models/chemberta')
 
         self.input_norm = nn.LayerNorm(latent_dimension)
@@ -1336,7 +1336,7 @@ class ChemBertaProteinAttention(nn.Module):
 
         self.apply(self._init_weights)
         for param in self.drug_model.parameters(): param.requires_grad = True
-        for param in self.target_model.parameters(): param.requires_grad = True
+        #for param in self.target_model.parameters(): param.requires_grad = True
 
 
     def _init_weights(self, module):
@@ -1373,22 +1373,21 @@ class ChemBertaProteinAttention(nn.Module):
     def forward(self, 
                 drug_input_ids: torch.Tensor, 
                 drug_att_masks: torch.Tensor,
-                target_input_ids: torch.Tensor,
-                target_att_masks: torch.Tensor,
+                target:torch.Tensor,
                 is_train=True):
 
         with torch.no_grad():
-            drug = self.drug_model(input_ids=drug_input_ids,
+            drug_embedding = self.drug_model(input_ids=drug_input_ids,
                                              attention_mask=drug_att_masks).last_hidden_state
-            target = self.target_model(input_ids=target_input_ids,
-                                                 attention_mask=target_att_masks).last_hidden_state
+            #target = self.target_model(input_ids=target_input_ids,
+                                                 #attention_mask=target_att_masks).last_hidden_state
         
-        drug_projection = self.drug_projector(drug)
+        drug_projection = self.drug_projector(drug_embedding)
         target_projection = self.target_projector(target)
 
+        target_att_mask = self.get_att_mask(target)
 
-        drug_projection = self.drug_projector(drug)
-        target_projection = self.target_projector(target)
+
 
         # drug_projection = drug_projection.unsqueeze(1)
         # inputs = torch.concat([drug_projection, target_projection], dim=1)
@@ -1398,12 +1397,11 @@ class ChemBertaProteinAttention(nn.Module):
 
         # inputs = self.position(inputs)
 
-        drug_attention_mask = drug_att_masks.bool()
-        target_attention_mask = target_att_masks.bool()
+        drug_att_masks = drug_att_masks.bool()
+        
 
-
-        drug_output , _ = self.cross_attn(drug_projection,target_projection,target_projection,key_padding_mask=target_attention_mask)
-        target_ouput, _ = self.cross_attn(target_projection,drug_projection,drug_projection,key_padding_mask=drug_attention_mask)
+        drug_output , _ = self.cross_attn(drug_projection,target_projection,target_projection,key_padding_mask=target_att_mask)
+        target_ouput, _ = self.cross_attn(target_projection,drug_projection,drug_projection,key_padding_mask=drug_att_masks)
 
         # out_embedding = self.pooler()
 

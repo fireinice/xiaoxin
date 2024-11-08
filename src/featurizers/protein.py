@@ -386,25 +386,66 @@ class ProtBertTokenFeaturizer(Featurizer):
     def __init__(self, save_dir: Path = Path().absolute(), per_tok=False):
         super().__init__("ProtBert", 1024,save_dir)
 
-        from transformers import AutoTokenizer
+        from transformers import AutoTokenizer,AutoModel,pipeline
 
         self._max_len = 1024
+        self.per_tok=per_tok
 
         self._protbert_tokenizer = AutoTokenizer.from_pretrained('./models/probert')
+        self._protbert_model = AutoModel.from_pretrained('./models/probert').to("cuda").eval()
+
+
+
+        self._protbert_feat = pipeline(
+            "feature-extraction",
+            model=self._protbert_model,
+            tokenizer=self._protbert_tokenizer,
+        )
+
+
+        self._register_cuda("model", self._protbert_model)
+        self._register_cuda(
+            "featurizer", self._protbert_feat, self._feat_to_device
+        )
+
+
+      
+
+    
+
+    def _feat_to_device(self, pipe, device):
+        from transformers import pipeline
+
+        if device.type == "cpu":
+            d = -1
+        else:
+            d = device.index
+
+        pipe = pipeline(
+            "feature-extraction",
+            model=self._protbert_model,
+            tokenizer=self._protbert_tokenizer,
+            device=d,
+        )
+        self._protbert_feat = pipe
+        return pipe
+
 
     def _space_sequence(self, x):
         return " ".join(list(x))
 
-    def _tokenizer(self, seqs: list):
-        spaced_seqs = [self._space_sequence(seq[:self._max_len - 2]) for seq in seqs]
+    def _tokenizer(self, seq: str):
 
-        encoded_inputs = self._protbert_tokenizer(
-            spaced_seqs,
-            padding='longest',  # 填充到当前 batch 中最长的序列
-            truncation=True,
-            add_special_tokens=False,
-            max_length=1024,
-            return_tensors='pt'
+        if len(seq) > self._max_len - 2:seq = seq[: self._max_len - 2]    
+
+        embedding = torch.tensor(
+            self._cuda_registry["featurizer"][0](self._space_sequence(self._space_sequence(seq)))
         )
+        seq_len = len(seq)
+        start_Idx = 1
+        end_Idx = seq_len + 1
+        feats = embedding.squeeze()[start_Idx:end_Idx]
 
-        return encoded_inputs
+        if self.per_tok:
+            return feats
+        return feats.mean(0)

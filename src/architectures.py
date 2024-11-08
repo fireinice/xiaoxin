@@ -1335,7 +1335,7 @@ class ChemBertaProteinAttention(nn.Module):
             ) 
 
         self.apply(self._init_weights)
-        for param in self.drug_model.parameters(): param.requires_grad = True
+        #for param in self.drug_model.parameters(): param.requires_grad = True
         #for param in self.target_model.parameters(): param.requires_grad = True
 
 
@@ -1376,9 +1376,7 @@ class ChemBertaProteinAttention(nn.Module):
                 target:torch.Tensor,
                 is_train=True):
 
-        with torch.no_grad():
-            drug_embedding = self.drug_model(input_ids=drug_input_ids,
-                                             attention_mask=drug_att_masks).last_hidden_state
+        drug_embedding = self.drug_model(input_ids=drug_input_ids,attention_mask=drug_att_masks).last_hidden_state
             #target = self.target_model(input_ids=target_input_ids,
                                                  #attention_mask=target_att_masks).last_hidden_state
         

@@ -17,6 +17,7 @@ dataset/DAVIS/ProtBert_features.h5
 dataset/DAVIS/ProtBert_features.h5.bak
 dataset/BingdingDB_v2/
 dataset/BindingDB_multi_class
+dataset/BindingDB_multi_class_small
 # File Types
 **/**.pk
 **/**.h5
@@ -26,3 +27,4 @@ dataset/BindingDB_multi_class
 dataset/DUDe/full.tsv
 dataset/DUDe/full_OLD.tsv
 large_scale_run.tsv
+dataset/TDC/

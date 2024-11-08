@@ -38,29 +38,30 @@ from transformers import AutoTokenizer, AutoModel
 class ChemBERTaFeaturizer(Featurizer):
     def __init__(
             self,
-            shape: int = 768,
+            shape: int = 384,
             radius: int = 2,
             save_dir: Path = Path().absolute(),
     ):
         super().__init__("ChemBERTa", shape, save_dir)
+        self._max_len = 512
+        self._chemberta_tokenizer = AutoTokenizer.from_pretrained('./models/chemberta')
 
-        self.tokenizer = AutoTokenizer.from_pretrained('/root/ConPLex_dev-main/download_chemberta/')
+    def _space_sequence(self, x):
+        return " ".join(list(x))
 
-    def smiles_to_chemberta(self, smile: str) -> torch.Tensor:
+    def _tokenizer(self, seqs: list):
+        spaced_seqs = [self._space_sequence(seq[:self._max_len - 2]) for seq in seqs]
 
-        smile = canonicalize(smile)
-        inputs = self.tokenizer(smile, return_tensors="pt")
-        return inputs
-    
-    def _transform(self, smile: str) -> torch.Tensor:
-        feats = self.smiles_to_chemberta(smile)
-#        print(feats.shape)
+        encoded_inputs = self._chemberta_tokenizer(
+            spaced_seqs,
+            padding='longest',  # 填充到当前 batch 中最长的序列
+            truncation=True,
+            add_special_tokens=False,
+            max_length=512,
+            return_tensors='pt'
+        )
 
-        if feats.shape[-1] != self.shape:
-            logg.warning("Failed to featurize: appending zero vector")
-            feats = torch.zeros(self.shape)
-
-        return feats
+        return encoded_inputs
 
 
 class Mol2VecFeaturizer(Featurizer):

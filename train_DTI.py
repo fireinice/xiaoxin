@@ -28,6 +28,7 @@ from src.data import (
     TDCDataModule,
     DUDEDataModule,
     EnzPredDataModule,
+    CSVDataModule
 )
 from src.utils import (
     set_random_seed,
@@ -48,7 +49,7 @@ parser.add_argument(
     "--exp-id", help="Experiment ID", dest="experiment_id", default='yongbo_dti_dg',
 )
 parser.add_argument(
-    "--config", help="YAML config file", default="configs/multiclass_config.yaml"
+    "--config", help="YAML config file", default="configs/chemberta_config.yaml"
 )
 
 parser.add_argument(
@@ -67,17 +68,18 @@ parser.add_argument(
         "biosnap_mol",
         "dti_dg",
         "bindingdb_v2",
-        "bindingdb_multi_class"
+        "bindingdb_multi_class",
+        "bindingdb_multi_class_small"
     ],
     type=str,
     help="Task name. Could be biosnap, bindingdb, davis, biosnap_prot, biosnap_mol.",
 )
 
 parser.add_argument(
-    "--drug-featurizer", help="Drug featurizer", dest="drug_featurizer",default="MorganFeaturizer"
+    "--drug-featurizer", help="Drug featurizer", dest="drug_featurizer"
 )
 parser.add_argument(
-    "--target-featurizer", help="Target featurizer", dest="target_featurizer",default="ProtBertFeaturizer"
+    "--target-featurizer", help="Target featurizer", dest="target_featurizer"
 )
 parser.add_argument(
     "--distance-metric",
@@ -131,7 +133,7 @@ def test(model, data_generator, metrics, device=None, classify=True):
 
     for i, batch in tqdm(enumerate(data_generator), total=len(data_generator)):
 
-        pred, label = step(model, batch, device)
+        pred, label = step(model, batch, device, is_train=False)
         if classify:
             label = label.int()
         else:
@@ -151,19 +153,21 @@ def test(model, data_generator, metrics, device=None, classify=True):
     return results
 
 
-def step(model, batch, device=None):
+def step(model, batch, device=None, is_train=True):
 
     if device is None:
         device = torch.device("cpu")
 
     drug, target, label = batch  # target is (D + N_pool)
+    drug = drug.to(device)
+    target = target.to(device)
     try:
-        pred = model(drug.to(device), target.to(device))
+        pred = model(drug, target, is_train=is_train)
     except Exception as e:
-        logg.error(f"Testing failed with exception {e}")
+        logg.error(f"failed with exception {e}")
         print('drug:',drug)
-        print('drug:',target)
-        print('drug:',label)
+        print('target:',target)
+        print('target:',label)
         raise ValueError("failed")
     label = Variable(torch.from_numpy(np.array(label)).float()).to(device)
     return pred, label
@@ -186,6 +190,15 @@ def contrastive_step(model, batch, device=None):
 def wandb_log(m, do_wandb=True):
     if do_wandb:
         wandb.log(m)
+
+
+def ordinal_regression_loss(y_pred, y_target):
+
+    num_thresholds = y_pred.size(1)
+    y_true_expanded = y_target.unsqueeze(1).repeat(1, num_thresholds)
+    mask = (torch.arange(num_thresholds).to(y_pred.device).unsqueeze(0) < y_true_expanded).float()
+    loss = torch.nn.BCELoss()(y_pred,mask)
+    return loss
 
 
 def main():
@@ -236,7 +249,24 @@ def main():
         config.target_featurizer, per_tok=per_tok, save_dir=task_dir
     )
 
-    if config.task in ("bindingdb_v2","dti_dg") :
+    if config.model_architecture ==  "ChemBertaProteinAttention":
+
+        config.classify = False
+        config.watch_metric = "val/pcc"
+
+        datamodule = CSVDataModule(
+            task_dir, 
+            drug_featurizer,
+            target_featurizer,
+            device=device,
+            seed=config.replicate,
+            batch_size=config.batch_size,
+            shuffle=config.shuffle,
+            num_workers=config.num_workers,
+            )
+
+
+    elif config.task in ("bindingdb_v2","dti_dg") :
         config.classify = False
         config.watch_metric = "val/pcc"
         datamodule = TDCDataModule(
@@ -249,7 +279,7 @@ def main():
             shuffle=config.shuffle,
             num_workers=config.num_workers,
         )
-    elif config.task in ("bindingdb_multi_class") :
+    elif config.task in ("bindingdb_multi_class","bindingdb_multi_class_small") :
 
         config.classify = True
         config.watch_metric = "val/aupr"
@@ -305,7 +335,7 @@ def main():
     # Model
     logg.info("Initializing model")
 
-    if config.task == 'bindingdb_multi_class':
+    if config.task in ('bindingdb_multi_class',"bindingdb_multi_class_small"):
 
         model = getattr(model_types, config.model_architecture)(
             config.drug_shape,
@@ -313,7 +343,8 @@ def main():
             latent_dimension=config.latent_dimension,
             latent_distance=config.latent_distance,
             classify=config.classify,
-            num_classes=config.num_classes
+            num_classes=config.num_classes,
+            loss_type=config.loss_type
         )
     else:
 
@@ -402,9 +433,12 @@ def main():
             "test/mse": torchmetrics.MeanSquaredError(),
             "test/pcc": torchmetrics.PearsonCorrCoef(),
         }
-    elif  config.task in ("bindingdb_multi_class"):
+    elif  config.task in ("bindingdb_multi_class","bindingdb_multi_class_small"):
 
-        loss_fct = torch.nn.CrossEntropyLoss()
+        if config.loss_type == "OR":
+            loss_fct = ordinal_regression_loss
+        else:
+            loss_fct = torch.nn.CrossEntropyLoss()
         val_metrics = {
             "val/class_accuracy": torchmetrics.classification.MulticlassAccuracy(num_classes=7,average=None),
             "val/class_recall": torchmetrics.classification.MulticlassRecall(num_classes=7, average=None),
@@ -418,6 +452,7 @@ def main():
             "test/aupr":torchmetrics.classification.MulticlassAveragePrecision(num_classes=7),
             "test/ConfusionMatrix":torchmetrics.ConfusionMatrix(task="multiclass", num_classes=7)
         }
+        
 
     else:
         loss_fct = torch.nn.BCELoss()

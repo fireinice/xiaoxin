@@ -1,17 +1,14 @@
-task: bindingdb_multi_class_small
+task: dti_dg
 contrastive_split: within
-drug_featurizer: MorganFeaturizer
-target_featurizer: ProtBertFeaturizer
-model_architecture: DrugProteinAttention
-latent_dimension: 1024
+drug_featurizer: ChemBERTaFeaturizer
+target_featurizer: ProtBertTokenFeaturizer
+model_architecture: ChemBertaProteinAttention
+latent_dimension: 512
 latent_distance: "Cosine"
-num_classes: 7
 batch_size: 512
 contrastive_batch_size: 256
 shuffle: True
 num_workers: 8
-
-loss_type: "OR"
 epochs: 50
 every_n_val: 1
 lr: 1e-4

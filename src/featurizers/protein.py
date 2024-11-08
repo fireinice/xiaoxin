@@ -379,3 +379,32 @@ class FoldSeekFeaturizer(Featurizer):
             FoldSeekFeaturizer._default_missing_foldseek_embedding(seq),
         )
         return fs_embedding
+
+
+
+class ProtBertTokenFeaturizer(Featurizer):
+    def __init__(self, save_dir: Path = Path().absolute(), per_tok=False):
+        super().__init__("ProtBert", 1024,save_dir)
+
+        from transformers import AutoTokenizer
+
+        self._max_len = 1024
+
+        self._protbert_tokenizer = AutoTokenizer.from_pretrained('./models/probert')
+
+    def _space_sequence(self, x):
+        return " ".join(list(x))
+
+    def _tokenizer(self, seqs: list):
+        spaced_seqs = [self._space_sequence(seq[:self._max_len - 2]) for seq in seqs]
+
+        encoded_inputs = self._protbert_tokenizer(
+            spaced_seqs,
+            padding='longest',  # 填充到当前 batch 中最长的序列
+            truncation=True,
+            add_special_tokens=False,
+            max_length=1024,
+            return_tensors='pt'
+        )
+
+        return encoded_inputs

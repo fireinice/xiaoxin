@@ -23,6 +23,7 @@ from .featurizers.protein import FOLDSEEK_MISSING_IDX
 from .utils import get_logger
 from pathlib import Path
 import typing as T
+import numpy as np
 
 logg = get_logger()
 
@@ -50,7 +51,8 @@ def get_task_dir(task_name: str):
         "kinase": "./dataset/EnzPred/davis_filtered",
         "phosphatase": "./dataset/EnzPred/phosphatase_chiral_binary",
         "bindingdb_v2":"./dataset/BingdingDB_v2",
-        "bindingdb_multi_class":"./dataset/BindingDB_multi_class"
+        "bindingdb_multi_class":"./dataset/BindingDB_multi_class",
+        "bindingdb_multi_class_small":"./dataset/BindingDB_multi_class_small"
     }
 
     return Path(task_paths[task_name.lower()]).resolve()
@@ -487,13 +489,13 @@ class TDCDataModule(pl.LightningDataModule):
             )
 
     def train_dataloader(self):
-        return DataLoader(self.data_train, **self._loader_kwargs)
+        return DataLoader(self.data_train, **self._loader_kwargs,drop_last=True)
 
     def val_dataloader(self):
-        return DataLoader(self.data_val, **self._loader_kwargs)
+        return DataLoader(self.data_val, **self._loader_kwargs,drop_last=True)
 
     def test_dataloader(self):
-        return DataLoader(self.data_test, **self._loader_kwargs)
+        return DataLoader(self.data_test, **self._loader_kwargs,drop_last=True)
 
 
 class EnzPredDataModule(pl.LightningDataModule):
@@ -807,3 +809,128 @@ class DUDEDataModule(pl.LightningDataModule):
 #         return DataLoader(self.data_test,
 #                          **self._loader_kwargs
 #                          )
+
+
+
+
+
+class CustomDataset(Dataset):
+    def __init__(self, dataframe, indices):
+        self.dataframe = dataframe
+        self.indices = indices
+        self.token_cache = {}
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        real_idx = self.indices[idx]
+        item = self.dataframe.loc[real_idx]
+
+        drug = item['Drug']
+        target = item['Target']
+        label = item['Y']
+        return drug, target, label
+
+class CSVDataModule(pl.LightningDataModule):
+    def __init__(
+        self,
+        data_dir: str,
+        drug_featurizer,
+        target_featurizer,
+        device: torch.device = torch.device("cpu"),
+        seed: int = 0,
+        batch_size: int = 32,
+        shuffle: bool = True,
+        num_workers: int = 0,
+        # header=0,
+        # index_col=0,
+        # sep=",",
+    ):
+
+        super().__init__()
+        self.data_dir = Path(data_dir)
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.num_workers = num_workers
+        self.device = device
+        self.drug_featurizer=drug_featurizer
+        self.target_featurizer=target_featurizer
+
+        # self._device = device
+
+        # self._data_dir = Path(data_dir)
+        # self._seed = seed
+
+        self._drug_column = "Drug"
+        self._target_column = "Target"
+        self._label_column = "Y"
+        self.token_cache = {}
+
+        self.collate_fn = self.collate_fn(drug_featurizer, target_featurizer,self.token_cache)
+
+    def prepare_data(self):
+        self.train_val_data = pd.read_csv(self.data_dir / "train_val.csv")
+        self.test_data = pd.read_csv(self.data_dir / "test.csv")
+
+    def setup(self, stage: T.Optional[str] = None):
+        import numpy as np
+
+        if stage == "fit" or stage is None:
+            df_indices = self.train_val_data.index.tolist()
+
+            np.random.seed(42)
+            np.random.shuffle(df_indices)
+            train_size = int(0.85 * len(df_indices))
+            train_indices = df_indices[:train_size]
+            val_indices = df_indices[train_size:]
+
+            self.train_data = CustomDataset(self.train_val_data, train_indices)
+            self.val_data = CustomDataset(self.train_val_data, val_indices)
+
+        if stage == "test" or stage is None:
+
+            test_indices = self.test_data.index.tolist()
+            self.test_dataset =  CustomDataset(self.test_data, val_indices)
+
+
+    def collate_fn(self,drug_featurizer,target_featurizer,token_cache):
+
+
+        def _fn(batch):
+
+
+            drugs = []
+            targets = []
+            labels = []
+
+
+            for item in batch:
+                drug, target, label = item
+                drugs.append(drug)
+                targets.append(target)
+                labels.append(label)
+            
+
+            drug_tokens = drug_featurizer._tokenizer(drugs)
+            target_tokens = target_featurizer._tokenizer(targets)
+            labels =  torch.from_numpy(np.array(labels))
+
+            return drug_tokens,target_tokens,labels
+
+        return _fn
+
+    def train_dataloader(self):
+        # return DataLoader(self.data_train, **self._loader_kwargs)
+        return DataLoader(self.train_data, batch_size=self.batch_size, shuffle=self.shuffle,
+                          num_workers=self.num_workers, collate_fn=self.collate_fn)
+
+    def val_dataloader(self):
+        # return DataLoader(self.data_val, **self._loader_kwargs)
+        return DataLoader(self.val_data, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers,
+                          collate_fn=self.collate_fn)
+
+    def test_dataloader(self):
+        # return DataLoader(self.data_test, **self._loader_kwargs)
+        return DataLoader(self.test_data, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers,
+                          collate_fn=self.collate_fn)

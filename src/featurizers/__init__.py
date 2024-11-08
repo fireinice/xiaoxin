@@ -14,10 +14,12 @@ from .protein import (
     BindPredict21Featurizer,
     DSCRIPTFeaturizer,
     FoldSeekFeaturizer,
+    ProtBertTokenFeaturizer
 )
 
 from .molecule import (
     MorganFeaturizer,
     Mol2VecFeaturizer,
     MolRFeaturizer,
+    ChemBERTaFeaturizer
 )

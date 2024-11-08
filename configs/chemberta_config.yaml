@@ -8,7 +8,7 @@ latent_distance: "Cosine"
 batch_size: 512
 contrastive_batch_size: 256
 shuffle: True
-num_workers: 1
+num_workers: 8
 epochs: 50
 every_n_val: 1
 lr: 1e-4

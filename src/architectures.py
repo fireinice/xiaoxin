@@ -1370,19 +1370,18 @@ class ChemBertaProteinAttention(nn.Module):
         return (y_pred > 0.5).sum(dim=1)
 
 
-    def forward(self, drug: torch.Tensor, target: torch.Tensor, is_train=True):
-
-
-        drug_input_ids = drug['input_ids']
-        drug_attention_mask = drug['attention_mask']
-        target_input_ids = target['input_ids']
-        target_attention_mask = target['attention_mask']
+    def forward(self, 
+                drug_input_ids: torch.Tensor, 
+                drug_att_masks: torch.Tensor,
+                target_input_ids: torch.Tensor,
+                target_att_masks: torch.Tensor,
+                is_train=True):
 
         with torch.no_grad():
             drug = self.drug_model(input_ids=drug_input_ids,
-                                             attention_mask=drug_attention_mask).last_hidden_state
+                                             attention_mask=drug_att_masks).last_hidden_state
             target = self.target_model(input_ids=target_input_ids,
-                                                 attention_mask=target_attention_mask).last_hidden_state
+                                                 attention_mask=target_att_masks).last_hidden_state
         
         drug_projection = self.drug_projector(drug)
         target_projection = self.target_projector(target)
@@ -1399,8 +1398,8 @@ class ChemBertaProteinAttention(nn.Module):
 
         # inputs = self.position(inputs)
 
-        drug_attention_mask = drug_attention_mask.bool()
-        target_attention_mask = target_attention_mask.bool()
+        drug_attention_mask = drug_att_masks.bool()
+        target_attention_mask = target_att_masks.bool()
 
 
         drug_output , _ = self.cross_attn(drug_projection,target_projection,target_projection,key_padding_mask=target_attention_mask)

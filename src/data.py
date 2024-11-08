@@ -913,7 +913,21 @@ class CSVDataModule(pl.LightningDataModule):
             
 
             drug_tokens = drug_featurizer._tokenizer(drugs)
+
+            drug_tokens["drug_input_ids"] = drug_tokens['input_ids']
+            drug_tokens["drug_att_masks"] = drug_tokens['attention_mask']
+            drug_tokens.pop("input_ids")
+            drug_tokens.pop("attention_mask")
+
             target_tokens = target_featurizer._tokenizer(targets)
+
+            target_tokens["target_input_ids"] = target_tokens['input_ids']
+            target_tokens["target_att_masks"] = target_tokens['attention_mask']
+            target_tokens.pop("input_ids")
+            target_tokens.pop("attention_mask")
+
+            target_tokens.pop("token_type_ids")
+
             labels =  torch.from_numpy(np.array(labels))
 
             return drug_tokens,target_tokens,labels

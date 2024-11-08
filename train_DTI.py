@@ -162,7 +162,7 @@ def step(model, batch, device=None, is_train=True):
     drug = drug.to(device)
     target = target.to(device)
     try:
-        pred = model(drug, target, is_train=is_train)
+        pred = model(**drug, **target, is_train=is_train)
     except Exception as e:
         logg.error(f"failed with exception {e}")
         print('drug:',drug)

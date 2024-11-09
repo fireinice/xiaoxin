@@ -1,7 +1,7 @@
 import copy
 from time import time
 import os
-#os.environ["CUDA_VISIBLE_DEVICES"] = '5,6'
+#os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 import sys
 import numpy as np
@@ -49,7 +49,7 @@ parser.add_argument(
     "--exp-id", help="Experiment ID", dest="experiment_id", default='yongbo_dti_dg',
 )
 parser.add_argument(
-    "--config", help="YAML config file", default="configs/chemberta_config.yaml"
+    "--config", help="YAML config file", default="configs/multiclass_config.yaml"
 )
 
 parser.add_argument(
@@ -168,19 +168,14 @@ def step(model, batch, device=None, is_train=True):
         drug = drug.to(device)
 
     target = target.to(device)
-    try:
+    
 
-        if isinstance(drug,dict):
-            
-            pred = model(drug['drug_input_ids'], drug['drug_att_masks'], target, is_train=is_train)
-        else:
-            pred = model(drug, target, is_train=is_train)
-    except Exception as e:
-        logg.error(f"failed with exception {e}")
-        print('drug:',drug)
-        print('target:',target)
-        print('target:',label)
-        raise ValueError("failed")
+    if isinstance(drug,dict):
+        
+        pred = model(drug['drug_input_ids'], drug['drug_att_masks'], target, is_train=is_train)
+    else:
+        pred = model(drug, target, is_train=is_train)
+
     label = Variable(torch.from_numpy(np.array(label)).float()).to(device)
     return pred, label
 
@@ -292,6 +287,7 @@ def main():
             batch_size=config.batch_size,
             shuffle=config.shuffle,
             num_workers=config.num_workers,
+            label_column=config.label_column
         )
     elif config.task in ("bindingdb_multi_class","bindingdb_multi_class_small") :
 

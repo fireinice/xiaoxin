@@ -371,6 +371,7 @@ class TDCDataModule(pl.LightningDataModule):
         header=0,
         index_col=0,
         sep=",",
+        label_column="Y"
     ):
 
         self._loader_kwargs = {
@@ -393,7 +394,7 @@ class TDCDataModule(pl.LightningDataModule):
 
         self._drug_column = "Drug"
         self._target_column = "Target"
-        self._label_column = "Y"
+        self._label_column = label_column
 
         self.drug_featurizer = drug_featurizer
         self.target_featurizer = target_featurizer

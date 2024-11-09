@@ -1,4 +1,4 @@
-task: bindingdb_multi_class_small
+task: bindingdb_multi_class
 contrastive_split: within
 drug_featurizer: MorganFeaturizer
 target_featurizer: ProtBertFeaturizer
@@ -9,7 +9,7 @@ num_classes: 7
 batch_size: 512
 contrastive_batch_size: 256
 shuffle: True
-num_workers: 8
+num_workers: 32
 
 loss_type: "OR"
 epochs: 50

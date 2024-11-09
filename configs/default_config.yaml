@@ -2,10 +2,9 @@ task: bindingdb_v2
 contrastive_split: within
 drug_featurizer: MorganFeaturizer
 target_featurizer: ProtBertFeaturizer
-model_architecture: SimpleCoembeddingSigmoid
+model_architecture: DrugProteinAttention
 latent_dimension: 1024
 latent_distance: "Cosine"
-
 batch_size: 512
 contrastive_batch_size: 256
 shuffle: True
@@ -25,7 +24,7 @@ margin_t0: 10
 replicate: 0
 device: 0
 verbosity: 3
-
+label_column: "origin_Y"
 wandb_proj: NoSigmoidTest
 wandb_save: True
 log_file: ./logs/scratch_testing.log

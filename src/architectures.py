@@ -1082,7 +1082,10 @@ class DrugProteinAttention(nn.Module):
 
     def ordinal_regression_predict(self, predict):
 
-        return (predict > 0.5).sum(dim=1)
+        predict =  (predict > 0.5).sum(dim=1)
+
+        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
+        return predict
     def forward(self, drug : torch.Tensor, target:torch.Tensor,is_train=True):
 
         b, d = drug.shape 
@@ -1316,18 +1319,18 @@ class ChemBertaProteinAttention(nn.Module):
                  self.predict_layer = nn.Sequential(
                  nn.Linear(256, 1, bias=True),
                  nn.Sigmoid(),
-            )
+                )
             else:
 
                 if self.loss_type == 'OR':
-                    num_classes = self.num_classes-1
+                    self.predict_layer = nn.Sequential(
+                    nn.Linear(256, self.num_classes-1, bias=True),
+                    nn.Sigmoid()
+                    )
                 else:
-                    num_classes = self.num_classes
-
-
-                self.predict_layer = nn.Sequential(
-                nn.Linear(256, num_classes, bias=True),
-            )
+                    self.predict_layer = nn.Sequential(
+                    nn.Linear(256, num_classes, bias=True),
+                    )
         else:
             self.predict_layer = nn.Sequential(
                  nn.Linear(256, 1, bias=True),
@@ -1363,12 +1366,11 @@ class ChemBertaProteinAttention(nn.Module):
         mask = torch.where(mask != 0.0, False, True)
         return mask
 
+    def ordinal_regression_predict(self, predict):
 
-    def ordinal_regression_predict(self, logit):
-
-        logit = torch.sigmoid(logit)
-        return (y_pred > 0.5).sum(dim=1)
-
+        predict =  (predict > 0.5).sum(dim=1)
+        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
+        return predict
 
     def forward(self, 
                 drug_input_ids: torch.Tensor, 

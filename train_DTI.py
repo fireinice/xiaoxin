@@ -1,7 +1,7 @@
 import copy
 from time import time
 import os
-#os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+#os.environ["CUDA_VISIBLE_DEVICES"] = '5,6'
 
 import sys
 import numpy as np
@@ -9,6 +9,8 @@ import pandas as pd
 
 import torch
 import json
+
+from pytorch_lightning.loggers import wandb
 from torch import nn
 from torch.autograd import Variable
 from torch.utils import data
@@ -49,7 +51,7 @@ parser.add_argument(
     "--exp-id", help="Experiment ID", dest="experiment_id", default='yongbo_dti_dg',
 )
 parser.add_argument(
-    "--config", help="YAML config file", default="configs/multiclass_config.yaml"
+    "--config", help="YAML config file", default="configs/chemberta_config.yaml"
 )
 
 parser.add_argument(
@@ -168,13 +170,29 @@ def step(model, batch, device=None, is_train=True):
         drug = drug.to(device)
 
     target = target.to(device)
-    
+    try:
+        # if isinstance(drug, dict):
+        #     print(
+        #         f"drug_input_ids shape: {drug['drug_input_ids'].shape}, attention_mask shape: {drug['drug_att_masks'].shape}")
+        # else:
+        #     print(f"drug shape: {drug.shape}")
+        #
+        # print(f"target shape: {target.shape}")
 
-    if isinstance(drug,dict):
-        
-        pred = model(drug['drug_input_ids'], drug['drug_att_masks'], target, is_train=is_train)
-    else:
-        pred = model(drug, target, is_train=is_train)
+        if isinstance(drug, dict):
+            pred = model(drug['drug_input_ids'], drug['drug_att_masks'], target, is_train=is_train)
+        else:
+            pred = model(drug, target, is_train=is_train)
+
+        # print(f"Prediction shape: {pred.shape}")
+        # print(f"Prediction min: {pred.min().item()}, max: {pred.max().item()}")
+
+    except Exception as e:
+        logg.error(f"failed with exception {e}")
+        print('drug:', drug)
+        print('target:', target)
+        print('label:', label)
+        raise
 
     label = Variable(torch.from_numpy(np.array(label)).float()).to(device)
     return pred, label
@@ -258,7 +276,7 @@ def main():
         config.target_featurizer, per_tok=per_tok, save_dir=task_dir
     )
 
-    if config.model_architecture ==  "ChemBertaProteinAttention":
+    if config.model_architecture == "ChemBertaProteinAttention":
 
         config.classify = False
         config.watch_metric = "val/pcc"
@@ -287,7 +305,6 @@ def main():
             batch_size=config.batch_size,
             shuffle=config.shuffle,
             num_workers=config.num_workers,
-            label_column=config.label_column
         )
     elif config.task in ("bindingdb_multi_class","bindingdb_multi_class_small") :
 
@@ -375,8 +392,7 @@ def main():
         logg.info(f"Using {torch.cuda.device_count()} GPUs for DataParallel")
         model = nn.DataParallel(model)
 
-    
-    
+
     logg.info(model)
 
 
@@ -671,56 +687,56 @@ def main():
                         logg.info(f"{k}: {v}")
         
 
-        # Testing
-        logg.info("Beginning testing")
-        try:
-            with torch.set_grad_enabled(False):
-                model_max = model_max.eval()
-
-                test_start_time = time()
-                test_results = test(
-                    model_max,
-                    testing_generator,
-                    test_metrics,
-                    device,
-                    config.classify,
-                )
-                test_end_time = time()
-
-                test_results["epoch"] = epo + 1
-                test_results["test/eval_time"] = test_end_time - test_start_time
-                test_results["Charts/wall_clock_time"] = 0
-                #wandb_log(test_results, do_wandb)
-
-                logg.info("epoch Testing")
-                for k, v in test_results.items():
-                    if not k.startswith("_"):
-                        logg.info(f"{k}: {v}")
-
-                #model_save_path = Path(
-                    #f"{save_dir}/{config.experiment_id}_best_model.pt"
-                #)
-                #torch.save(
-                   # model_max.state_dict(),
-                    #model_save_path,
-                #)
-                #logg.info(f"Saving final model to {model_save_path}")
-                """
-
-                if do_wandb:
-                    art = wandb.Artifact(
-                        f"dti-{config.experiment_id}", type="model"
-                    )
-                    art.add_file(model_save_path, model_save_path.name)
-                    wandb.log_artifact(art, aliases=["best"])
-
-                    
-                """
-
-            
-
-        except Exception as e:
-            logg.error(f"Testing failed with exception {e}")
+        # # Testing
+        # logg.info("Beginning testing")
+        # try:
+        #     with torch.set_grad_enabled(False):
+        #         model_max = model_max.eval()
+        #
+        #         test_start_time = time()
+        #         test_results = test(
+        #             model_max,
+        #             testing_generator,
+        #             test_metrics,
+        #             device,
+        #             config.classify,
+        #         )
+        #         test_end_time = time()
+        #
+        #         test_results["epoch"] = epo + 1
+        #         test_results["test/eval_time"] = test_end_time - test_start_time
+        #         test_results["Charts/wall_clock_time"] = 0
+        #         #wandb_log(test_results, do_wandb)
+        #
+        #         logg.info("epoch Testing")
+        #         for k, v in test_results.items():
+        #             if not k.startswith("_"):
+        #                 logg.info(f"{k}: {v}")
+        #
+        #         #model_save_path = Path(
+        #             #f"{save_dir}/{config.experiment_id}_best_model.pt"
+        #         #)
+        #         #torch.save(
+        #            # model_max.state_dict(),
+        #             #model_save_path,
+        #         #)
+        #         #logg.info(f"Saving final model to {model_save_path}")
+        #         """
+        #
+        #         if do_wandb:
+        #             art = wandb.Artifact(
+        #                 f"dti-{config.experiment_id}", type="model"
+        #             )
+        #             art.add_file(model_save_path, model_save_path.name)
+        #             wandb.log_artifact(art, aliases=["best"])
+        #
+        #
+        #         """
+        #
+        #
+        #
+        # except Exception as e:
+        #     logg.error(f"Testing failed with exception {e}")
 
 
     end_time = time()
@@ -780,5 +796,5 @@ def main():
 
 if __name__ == "__main__":
 
-    #torch.multiprocessing.set_start_method('spawn')
+    torch.multiprocessing.set_start_method('spawn')
     best_model = main()

@@ -979,7 +979,7 @@ class CSVDataModule(pl.LightningDataModule):
 
             labels =  torch.from_numpy(np.array(labels))
 
-            return drug_tokens,target_tokens,labels
+            return drug_tokens,targets,labels
 
         return _fn
 

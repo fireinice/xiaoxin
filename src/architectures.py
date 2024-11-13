@@ -1381,7 +1381,8 @@ class ChemBertaProteinAttention(nn.Module):
         drug_embedding = self.drug_model(input_ids=drug_input_ids,attention_mask=drug_att_masks).last_hidden_state
             #target = self.target_model(input_ids=target_input_ids,
                                                  #attention_mask=target_att_masks).last_hidden_state
-        
+
+        drug_embedding = drug_embedding.detach()
         drug_projection = self.drug_projector(drug_embedding)
         target_projection = self.target_projector(target)
 
@@ -1397,7 +1398,7 @@ class ChemBertaProteinAttention(nn.Module):
 
         # inputs = self.position(inputs)
 
-        drug_att_masks = drug_att_masks.bool()
+        drug_att_masks = ~drug_att_masks.bool()
         
 
         drug_output , _ = self.cross_attn(drug_projection,target_projection,target_projection,key_padding_mask=target_att_mask)

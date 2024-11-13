@@ -1082,7 +1082,10 @@ class DrugProteinAttention(nn.Module):
 
     def ordinal_regression_predict(self, predict):
 
-        return (predict > 0.5).sum(dim=1)
+        predict =  (predict > 0.5).sum(dim=1)
+
+        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
+        return predict
     def forward(self, drug : torch.Tensor, target:torch.Tensor,is_train=True):
 
         b, d = drug.shape 
@@ -1299,8 +1302,7 @@ class ChemBertaProteinAttention(nn.Module):
         # nn.init.xavier_normal_(self.target_projector[0].weight)
         
        #self.target_model = AutoModel.from_pretrained('./models/probert')
-
-        self.drug_model = AutoModel.from_pretrained('../down_chemberta/')
+        self.drug_model = AutoModel.from_pretrained('./models/chemberta')
 
         self.input_norm = nn.LayerNorm(latent_dimension)
 
@@ -1317,18 +1319,18 @@ class ChemBertaProteinAttention(nn.Module):
                  self.predict_layer = nn.Sequential(
                  nn.Linear(256, 1, bias=True),
                  nn.Sigmoid(),
-            )
+                )
             else:
 
                 if self.loss_type == 'OR':
-                    num_classes = self.num_classes-1
+                    self.predict_layer = nn.Sequential(
+                    nn.Linear(256, self.num_classes-1, bias=True),
+                    nn.Sigmoid()
+                    )
                 else:
-                    num_classes = self.num_classes
-
-
-                self.predict_layer = nn.Sequential(
-                nn.Linear(256, num_classes, bias=True),
-            )
+                    self.predict_layer = nn.Sequential(
+                    nn.Linear(256, num_classes, bias=True),
+                    )
         else:
             self.predict_layer = nn.Sequential(
                  nn.Linear(256, 1, bias=True),
@@ -1336,8 +1338,8 @@ class ChemBertaProteinAttention(nn.Module):
             ) 
 
         self.apply(self._init_weights)
-        # for param in self.drug_model.parameters(): param.requires_grad = False
-        # for param in self.target_model.parameters(): param.requires_grad = True
+        #for param in self.drug_model.parameters(): param.requires_grad = True
+        #for param in self.target_model.parameters(): param.requires_grad = True
 
 
     def _init_weights(self, module):
@@ -1364,35 +1366,27 @@ class ChemBertaProteinAttention(nn.Module):
         mask = torch.where(mask != 0.0, False, True)
         return mask
 
+    def ordinal_regression_predict(self, predict):
 
-    def ordinal_regression_predict(self, logit):
-
-        y_pred = torch.sigmoid(logit)
-        return (y_pred > 0.5).sum(dim=1)
-
+        predict =  (predict > 0.5).sum(dim=1)
+        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
+        return predict
 
     def forward(self, 
-                drug_input_ids: torch.Tensor,
+                drug_input_ids: torch.Tensor, 
                 drug_att_masks: torch.Tensor,
                 target:torch.Tensor,
                 is_train=True):
 
-        drug_embedding = self.drug_model(input_ids=drug_input_ids, attention_mask=drug_att_masks).last_hidden_state
+        drug_embedding = self.drug_model(input_ids=drug_input_ids,attention_mask=drug_att_masks).last_hidden_state
             #target = self.target_model(input_ids=target_input_ids,
                                                  #attention_mask=target_att_masks).last_hidden_state
-
-
-        # print(f"drug min: {drug_embedding.min().item()}, max: {drug_embedding.max().item()}")
-        # print(f"target: min:{target.min().item()},max:{target.max().item()}")
-
-        drug_embedding = drug_embedding.detach()
+        
         drug_projection = self.drug_projector(drug_embedding)
         target_projection = self.target_projector(target)
-        # print(f"drug_projection min: {drug_projection.min().item()}, max: {drug_projection.max().item()}")
-        # print(f"target_projection min: {target_projection.min().item()}, max: {target_projection.max().item()}")
-
 
         target_att_mask = self.get_att_mask(target)
+
 
 
         # drug_projection = drug_projection.unsqueeze(1)
@@ -1400,32 +1394,28 @@ class ChemBertaProteinAttention(nn.Module):
 
         drug_projection = self.input_norm(drug_projection)
         target_projection = self.input_norm(target_projection)
-        # print(f"drug_projection min: {drug_projection.min().item()}, max: {drug_projection.max().item()}")
-        # print(f"target_projection: min:{target_projection.min().item()},max:{target_projection.max().item()}")
 
         # inputs = self.position(inputs)
-        drug_att_masks = ~drug_att_masks.bool()
+
+        drug_att_masks = drug_att_masks.bool()
+        
 
         drug_output , _ = self.cross_attn(drug_projection,target_projection,target_projection,key_padding_mask=target_att_mask)
         target_ouput, _ = self.cross_attn(target_projection,drug_projection,drug_projection,key_padding_mask=drug_att_masks)
-        # print(f"drug_output min: {drug_output.min().item()}, max: {drug_output.max().item()}")
-        # print(f"target_ouput: min:{target_ouput.min().item()},max:{target_ouput.max().item()}")
+
         # out_embedding = self.pooler()
 
         drug_output = self.max_pool(drug_output.permute(0, 2, 1)).squeeze()
         target_ouput = self.max_pool(target_ouput.permute(0, 2, 1)).squeeze()
 
         out_embedding = torch.concat([drug_output,target_ouput],dim=-1)
-        # print(f"out_embedding min:{out_embedding.min().item()},max:{out_embedding.max().item()}")
 
         x = self.mlp(out_embedding)
-        # print(f"x min: {x.min().item()}, max: {x.max().item()}")
         predict = self.predict_layer(x)
-        print(f"predict min:{predict.min().item()},max:{predict.max().item()}")
+
         predict = torch.squeeze(predict, dim=-1)
 
         if (is_train==False and self.loss_type=="OR"):
             return self.ordinal_regression_predict(predict) 
         else:
             return predict
-

@@ -120,7 +120,6 @@ def test(model, data_generator, metrics, device=None, classify=True):
         logg.warning("device is cpu!")
         device = torch.device("cpu")
 
-
     for k, metric in metrics.items():
         metric = metric.to(device)
         metric.reset()
@@ -272,6 +271,7 @@ def main():
             batch_size=config.batch_size,
             shuffle=config.shuffle,
             num_workers=config.num_workers,
+            label_column=config.label_column
             )
 
 
@@ -671,56 +671,56 @@ def main():
                         logg.info(f"{k}: {v}")
         
 
-        # # Testing
-        # logg.info("Beginning testing")
-        # try:
-        #     with torch.set_grad_enabled(False):
-        #         model_max = model_max.eval()
-        #
-        #         test_start_time = time()
-        #         test_results = test(
-        #             model_max,
-        #             testing_generator,
-        #             test_metrics,
-        #             device,
-        #             config.classify,
-        #         )
-        #         test_end_time = time()
-        #
-        #         test_results["epoch"] = epo + 1
-        #         test_results["test/eval_time"] = test_end_time - test_start_time
-        #         test_results["Charts/wall_clock_time"] = 0
-        #         #wandb_log(test_results, do_wandb)
-        #
-        #         logg.info("epoch Testing")
-        #         for k, v in test_results.items():
-        #             if not k.startswith("_"):
-        #                 logg.info(f"{k}: {v}")
-        #
-        #         #model_save_path = Path(
-        #             #f"{save_dir}/{config.experiment_id}_best_model.pt"
-        #         #)
-        #         #torch.save(
-        #            # model_max.state_dict(),
-        #             #model_save_path,
-        #         #)
-        #         #logg.info(f"Saving final model to {model_save_path}")
-        #         """
-        #
-        #         if do_wandb:
-        #             art = wandb.Artifact(
-        #                 f"dti-{config.experiment_id}", type="model"
-        #             )
-        #             art.add_file(model_save_path, model_save_path.name)
-        #             wandb.log_artifact(art, aliases=["best"])
-        #
-        #
-        #         """
-        #
-        #
-        #
-        # except Exception as e:
-        #     logg.error(f"Testing failed with exception {e}")
+        # Testing
+        logg.info("Beginning testing")
+        try:
+            with torch.set_grad_enabled(False):
+                model_max = model_max.eval()
+
+                test_start_time = time()
+                test_results = test(
+                    model_max,
+                    testing_generator,
+                    test_metrics,
+                    device,
+                    config.classify,
+                )
+                test_end_time = time()
+
+                test_results["epoch"] = epo + 1
+                test_results["test/eval_time"] = test_end_time - test_start_time
+                test_results["Charts/wall_clock_time"] = 0
+                #wandb_log(test_results, do_wandb)
+
+                logg.info("epoch Testing")
+                for k, v in test_results.items():
+                    if not k.startswith("_"):
+                        logg.info(f"{k}: {v}")
+
+                #model_save_path = Path(
+                    #f"{save_dir}/{config.experiment_id}_best_model.pt"
+                #)
+                #torch.save(
+                   # model_max.state_dict(),
+                    #model_save_path,
+                #)
+                #logg.info(f"Saving final model to {model_save_path}")
+                """
+
+                if do_wandb:
+                    art = wandb.Artifact(
+                        f"dti-{config.experiment_id}", type="model"
+                    )
+                    art.add_file(model_save_path, model_save_path.name)
+                    wandb.log_artifact(art, aliases=["best"])
+
+
+                """
+
+
+
+        except Exception as e:
+            logg.error(f"Testing failed with exception {e}")
 
 
     end_time = time()

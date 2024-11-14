@@ -890,6 +890,7 @@ class CSVDataModule(pl.LightningDataModule):
         # header=0,
         # index_col=0,
         # sep=",",
+        label_column='origin_Y'
     ):
 
         super().__init__()
@@ -908,7 +909,7 @@ class CSVDataModule(pl.LightningDataModule):
 
         self._drug_column = "Drug"
         self._target_column = "Target"
-        self._label_column = "Y"
+        self._label_column = label_column
         self.token_cache = {}
 
         self.collate_fn = self.collate_fn(drug_featurizer, target_featurizer,self.token_cache)
@@ -935,7 +936,7 @@ class CSVDataModule(pl.LightningDataModule):
         if stage == "test" or stage is None:
 
             test_indices = self.test_data.index.tolist()
-            self.test_dataset =  CustomDataset(self.test_data, val_indices)
+            self.test_dataset =  CustomDataset(self.test_data, test_indices)
 
 
     def collate_fn(self,drug_featurizer,target_featurizer,token_cache):

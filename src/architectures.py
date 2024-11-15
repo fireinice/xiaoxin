@@ -1399,11 +1399,12 @@ class ChemBertaProteinAttention(nn.Module):
         # inputs = self.position(inputs)
 
         drug_att_masks = ~drug_att_masks.bool()
-        
 
+        drug_projection = drug_projection.masked_fill(drug_att_masks.unsqueeze(-1), float('-inf'))
         drug_output , _ = self.cross_attn(drug_projection,target_projection,target_projection,key_padding_mask=target_att_mask)
+        drug_output = drug_output * (~drug_att_masks).unsqueeze(-1).float()
         target_ouput, _ = self.cross_attn(target_projection,drug_projection,drug_projection,key_padding_mask=drug_att_masks)
-
+        target_ouput = target_ouput * (~target_att_mask).unsqueeze(-1).float()
         # out_embedding = self.pooler()
 
         drug_output = self.max_pool(drug_output.permute(0, 2, 1)).squeeze()

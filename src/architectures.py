@@ -1264,9 +1264,9 @@ class ChemBertaProteinAttention(nn.Module):
 
     def __init__(
             self,
-            drug_shape=384,
+            drug_shape=1024,
             target_shape=1024,
-            latent_dimension=384,
+            latent_dimension=1024,
             latent_activation=nn.ReLU,
             latent_distance="Cosine",
             classify=True,
@@ -1275,7 +1275,6 @@ class ChemBertaProteinAttention(nn.Module):
     ):
         super().__init__()
 
-        
         self.drug_shape = drug_shape
         self.target_shape = target_shape
         self.latent_dimension = latent_dimension
@@ -1306,7 +1305,8 @@ class ChemBertaProteinAttention(nn.Module):
 
         self.input_norm = nn.LayerNorm(latent_dimension)
 
-        self.cross_attn = nn.MultiheadAttention(embed_dim=self.latent_dimension, num_heads=16,dropout=0.1,batch_first=True)
+        self.drug_cross_attn = nn.MultiheadAttention(embed_dim=self.latent_dimension, num_heads=16,dropout=0.1,batch_first=True)
+        self.target_cross_attn = nn.MultiheadAttention(embed_dim=self.latent_dimension, num_heads=16, dropout=0.1,batch_first=True)
         self.max_pool = nn.AdaptiveMaxPool1d(1)
 
         # self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=3)
@@ -1368,7 +1368,7 @@ class ChemBertaProteinAttention(nn.Module):
 
     def ordinal_regression_predict(self, predict):
 
-        predict =  (predict > 0.5).sum(dim=1)
+        predict = (predict > 0.5).sum(dim=1)
         predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
         return predict
 
@@ -1381,14 +1381,13 @@ class ChemBertaProteinAttention(nn.Module):
         drug_embedding = self.drug_model(input_ids=drug_input_ids,attention_mask=drug_att_masks).last_hidden_state
             #target = self.target_model(input_ids=target_input_ids,
                                                  #attention_mask=target_att_masks).last_hidden_state
+        # drug_embedding = drug_embedding.mean(dim=1).squeeze()
 
-        drug_embedding = drug_embedding.detach()
+        # drug_embedding = drug_embedding.detach()
         drug_projection = self.drug_projector(drug_embedding)
         target_projection = self.target_projector(target)
 
         target_att_mask = self.get_att_mask(target)
-
-
 
         # drug_projection = drug_projection.unsqueeze(1)
         # inputs = torch.concat([drug_projection, target_projection], dim=1)
@@ -1400,12 +1399,10 @@ class ChemBertaProteinAttention(nn.Module):
 
         drug_att_masks = ~drug_att_masks.bool()
 
-        drug_projection = drug_projection.masked_fill(drug_att_masks.unsqueeze(-1), float('-inf'))
-        drug_output , _ = self.cross_attn(drug_projection,target_projection,target_projection,key_padding_mask=target_att_mask)
+        drug_output , _ = self.drug_cross_attn(drug_projection,target_projection,target_projection,key_padding_mask=target_att_mask)
         drug_output = drug_output * (~drug_att_masks).unsqueeze(-1).float()
-        target_ouput, _ = self.cross_attn(target_projection,drug_projection,drug_projection,key_padding_mask=drug_att_masks)
+        target_ouput, _ = self.target_cross_attn(target_projection,drug_projection,drug_projection,key_padding_mask=drug_att_masks)
         target_ouput = target_ouput * (~target_att_mask).unsqueeze(-1).float()
-        # out_embedding = self.pooler()
 
         drug_output = self.max_pool(drug_output.permute(0, 2, 1)).squeeze()
         target_ouput = self.max_pool(target_ouput.permute(0, 2, 1)).squeeze()

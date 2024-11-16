@@ -1093,6 +1093,7 @@ class DrugProteinAttention(nn.Module):
         b,n,d = target.shape 
 
         drug_projection = self.drug_projector(drug)
+        drug_projection = torch.tanh(drug_projection)
         #target_projection = self.target_projector(target)
         target_projection = target
 
@@ -1119,7 +1120,6 @@ class DrugProteinAttention(nn.Module):
             return self.ordinal_regression_predict(predict) 
         else:
             return predict
-
 
 class DrugProteinMLP(nn.Module):
 
@@ -1379,11 +1379,11 @@ class ChemBertaProteinAttention(nn.Module):
                 is_train=True):
 
         drug_embedding = self.drug_model(input_ids=drug_input_ids,attention_mask=drug_att_masks).last_hidden_state
-            #target = self.target_model(input_ids=target_input_ids,
-                                                 #attention_mask=target_att_masks).last_hidden_state
+            # target = self.target_model(input_ids=target_input_ids,
+            #                                      attention_mask=target_att_masks).last_hidden_state
         # drug_embedding = drug_embedding.mean(dim=1).squeeze()
 
-        # drug_embedding = drug_embedding.detach()
+        drug_embedding = drug_embedding.detach()
         drug_projection = self.drug_projector(drug_embedding)
         target_projection = self.target_projector(target)
 
@@ -1416,5 +1416,164 @@ class ChemBertaProteinAttention(nn.Module):
 
         if (is_train==False and self.loss_type=="OR"):
             return self.ordinal_regression_predict(predict) 
+        else:
+            return predict
+
+class ChemBertaAttention(nn.Module):
+
+    def __init__(
+            self,
+            drug_shape=1024,
+            target_shape=1024,
+            latent_dimension=1024,
+            latent_activation=nn.ReLU,
+            latent_distance="Cosine",
+            classify=True,
+            num_classes=2,
+            loss_type="CE"
+    ):
+        super().__init__()
+
+        self.drug_shape = drug_shape
+        self.target_shape = target_shape
+        self.latent_dimension = latent_dimension
+        self.do_classify = classify
+        self.loss_type = loss_type
+
+        self.pooler = BertPooler(latent_dimension)
+
+        self.drug_projector = nn.Sequential(
+            nn.Linear(self.drug_shape, latent_dimension)
+        )
+        # nn.init.xavier_normal_(self.drug_projector[0].weight)
+        self.target_projector = nn.Sequential(
+            nn.Linear(self.target_shape, latent_dimension)
+        )
+
+        # nn.init.xavier_normal_(self.drug_projector[0].weight)
+        self.target_projector = nn.Sequential(
+            nn.Linear(self.target_shape, latent_dimension)
+        )
+
+        # self.position = PositionalEncoding(d_model=latent_dimension,max_len=latent_dimension)
+        # nn.init.xavier_normal_(self.target_projector[0].weight)
+
+        # self.target_model = AutoModel.from_pretrained('./models/probert')
+        self.drug_model = AutoModel.from_pretrained('./models/chemberta')
+
+        self.input_norm = nn.LayerNorm(latent_dimension)
+
+        self.drug_cross_attn = nn.MultiheadAttention(embed_dim=self.latent_dimension, num_heads=16, dropout=0.1,
+                                                     batch_first=True)
+        self.target_cross_attn = nn.MultiheadAttention(embed_dim=self.latent_dimension, num_heads=16, dropout=0.1,
+                                                       batch_first=True)
+        self.max_pool = nn.AdaptiveMaxPool1d(1)
+
+        # self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=3)
+
+        self.mlp = MLP(latent_dimension * 2, 512, 256)
+
+        if classify:
+
+            if self.num_classes == 2:
+                self.predict_layer = nn.Sequential(
+                    nn.Linear(256, 1, bias=True),
+                    nn.Sigmoid(),
+                )
+            else:
+
+                if self.loss_type == 'OR':
+                    self.predict_layer = nn.Sequential(
+                        nn.Linear(256, self.num_classes - 1, bias=True),
+                        nn.Sigmoid()
+                    )
+                else:
+                    self.predict_layer = nn.Sequential(
+                        nn.Linear(256, num_classes, bias=True),
+                    )
+        else:
+            self.predict_layer = nn.Sequential(
+                nn.Linear(256, 1, bias=True),
+                nn.ReLU(),
+            )
+
+        self.apply(self._init_weights)
+        # for param in self.drug_model.parameters(): param.requires_grad = True
+        # for param in self.target_model.parameters(): param.requires_grad = True
+
+    def _init_weights(self, module):
+        """Initialize the weights"""
+        initializer_range = 0.02
+        if isinstance(module, nn.Linear):
+            # Slightly different from the TF version which uses truncated_normal for initialization
+            # cf https://github.com/pytorch/pytorch/pull/5617
+            torch.nn.init.xavier_normal_(module.weight.data)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.xavier_normal_(module.weight.data)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+
+    def get_att_mask(self, drug: torch.Tensor):
+        batch, seq, dim = drug.shape
+
+        mask = torch.mean(drug, dim=-1)
+        mask = torch.where(mask != 0.0, False, True)
+        return mask
+
+    def ordinal_regression_predict(self, predict):
+
+        predict = (predict > 0.5).sum(dim=1)
+        predict = torch.nn.functional.one_hot(predict, num_classes=self.num_classes).to(torch.float32)
+        return predict
+
+    def forward(self,
+                drug : torch.Tensor,
+                target: torch.Tensor,
+                is_train=True):
+
+        # drug_embedding = self.drug_model(input_ids=drug_input_ids,attention_mask=drug_att_masks).last_hidden_state
+        # target = self.target_model(input_ids=target_input_ids,
+        # attention_mask=target_att_masks).last_hidden_state
+        # drug_embedding = drug_embedding.mean(dim=1).squeeze()
+
+        drug = drug.detach()
+        drug_projection = self.drug_projector(drug)
+        target_projection = self.target_projector(target)
+
+        target_att_mask = self.get_att_mask(target)
+        drug_att_mask = self.get_att_mask(drug)
+
+        # drug_projection = drug_projection.unsqueeze(1)
+        # inputs = torch.concat([drug_projection, target_projection], dim=1)
+
+        drug_projection = self.input_norm(drug_projection)
+        target_projection = self.input_norm(target_projection)
+
+        # inputs = self.position(inputs)
+
+        drug_output, _ = self.drug_cross_attn(drug_projection, target_projection, target_projection,
+                                              key_padding_mask=target_att_mask)
+        drug_output = drug_output * (~drug_att_mask).unsqueeze(-1).float()
+        target_ouput, _ = self.target_cross_attn(target_projection, drug_projection, drug_projection,
+                                                 key_padding_mask=drug_att_mask)
+        target_ouput = target_ouput * (~target_att_mask).unsqueeze(-1).float()
+
+        drug_output = self.max_pool(drug_output.permute(0, 2, 1)).squeeze()
+        target_ouput = self.max_pool(target_ouput.permute(0, 2, 1)).squeeze()
+
+        out_embedding = torch.concat([drug_output, target_ouput], dim=-1)
+
+        x = self.mlp(out_embedding)
+        predict = self.predict_layer(x)
+
+        predict = torch.squeeze(predict, dim=-1)
+
+        if (is_train == False and self.loss_type == "OR"):
+            return self.ordinal_regression_predict(predict)
         else:
             return predict

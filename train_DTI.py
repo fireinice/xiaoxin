@@ -28,7 +28,8 @@ from src.data import (
     TDCDataModule,
     DUDEDataModule,
     EnzPredDataModule,
-    CSVDataModule
+    CSVDataModule,
+    TestModule
 )
 from src.utils import (
     set_random_seed,
@@ -173,7 +174,7 @@ def step(model, batch, device=None, is_train=True):
         
         pred = model(drug['drug_input_ids'], drug['drug_att_masks'], target, is_train=is_train)
     else:
-        pred = model(drug, target, is_train=is_train)
+        pred = model(drug, target)
 
     label = Variable(torch.from_numpy(np.array(label)).float()).to(device)
     return pred, label
@@ -247,7 +248,7 @@ def main():
 
     drug_featurizer = get_featurizer(config.drug_featurizer, save_dir=task_dir)
 
-    if config.model_architecture in ('DrugProteinAttention','DrugProteinMLP','ChemBertaProteinAttention'):
+    if config.model_architecture in ('DrugProteinAttention','DrugProteinMLP','ChemBertaProteinAttention','ChemBertaAttention'):
         per_tok=True
     else:
         per_tok=False
@@ -257,13 +258,30 @@ def main():
         config.target_featurizer, per_tok=per_tok, save_dir=task_dir
     )
 
-    if config.model_architecture ==  "ChemBertaProteinAttention":
+    if config.model_architecture == "ChemBertaProteinAttention":
 
         config.classify = False
         config.watch_metric = "val/pcc"
 
         datamodule = CSVDataModule(
             task_dir, 
+            drug_featurizer,
+            target_featurizer,
+            device=device,
+            seed=config.replicate,
+            batch_size=config.batch_size,
+            shuffle=config.shuffle,
+            num_workers=config.num_workers,
+            label_column=config.label_column
+            )
+
+    elif config.model_architecture == "ChemBertaAttention":
+
+        config.classify = False
+        config.watch_metric = "val/pcc"
+
+        datamodule = TestModule(
+            task_dir,
             drug_featurizer,
             target_featurizer,
             device=device,
@@ -289,6 +307,7 @@ def main():
             num_workers=config.num_workers,
             label_column=config.label_column
         )
+
     elif config.task in ("bindingdb_multi_class","bindingdb_multi_class_small") :
 
         config.classify = True
@@ -302,6 +321,7 @@ def main():
             batch_size=config.batch_size,
             shuffle=config.shuffle,
             num_workers=config.num_workers,
+            label_column=config.label_column
         )
 
     elif config.task in EnzPredDataModule.dataset_list():
@@ -365,9 +385,6 @@ def main():
             latent_distance=config.latent_distance,
             classify=config.classify,
         )
-    if "checkpoint" in config:
-        state_dict = torch.load(config.checkpoint)
-        model.load_state_dict(state_dict)
     
     model = model.to(device)
     # 使用 DataParallel 进行多GPU加速
@@ -375,8 +392,10 @@ def main():
         logg.info(f"Using {torch.cuda.device_count()} GPUs for DataParallel")
         model = nn.DataParallel(model)
 
-    
-    
+    if "checkpoint" in config:
+        state_dict = torch.load(config.checkpoint)
+        model.load_state_dict(state_dict)
+
     logg.info(model)
 
 
@@ -780,5 +799,5 @@ def main():
 
 if __name__ == "__main__":
 
-    #torch.multiprocessing.set_start_method('spawn')
+    # torch.multiprocessing.set_start_method('spawn')
     best_model = main()

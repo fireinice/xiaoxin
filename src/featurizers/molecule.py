@@ -333,16 +333,12 @@ class ChemBertaTokenFeaturizer(Featurizer):
 
     def _tokenizer(self, seqs: list):
 
-        # seqs = canonicalize(seqs)
-
-        if len(seqs) > self._max_len - 2: seqs = seqs[: self._max_len - 2]
-
         encoded_inputs = self._chemberta_tokenizer(
             seqs,
             padding='longest',  # 填充到当前 batch 中最长的序列
             truncation=True,
             add_special_tokens=False,
-            max_length=512,
+            max_length=self._max_len,
             return_tensors='pt'
         )
 
@@ -356,7 +352,7 @@ class ChemBertaFeaturizer(Featurizer):
             save_dir: Path = Path().absolute(),
     ):
         super().__init__("ChemBERTa", shape, save_dir)
-
+        self._max_len = 512
         self.tokenizer = AutoTokenizer.from_pretrained('./models/chemberta')
         self.model = AutoModel.from_pretrained('./models/chemberta')
         self.model.eval()
@@ -369,19 +365,22 @@ class ChemBertaFeaturizer(Featurizer):
             logg.warning(f"Failed to canonicalize SMILES: {smile}. Skipping. Error: {e}")
 
         try:
-            inputs = self.tokenizer(smile, return_tensors="pt")
+            inputs = self.tokenizer(smile,add_special_tokens=False,truncation=True,return_tensors="pt")
+
             with torch.no_grad():
                 outputs = self.model(**inputs)
 
             embedding = outputs.last_hidden_state.squeeze(0)
-            if embedding.dim==1:
+
+            if embedding.dim() == 1:
+                logg.warning(f"have one hot embedding:{smile}")
                 embedding = embedding.unsqueeze(0)
-                print("have one hot embedding")
 
         except Exception as e:
             logg.error(f"ChemBERTa failed to featurize: returning zero vector.")
             logg.error(e)
             embedding = torch.zeros(self.shape)
+            embedding = embedding.unsqueeze(0)
 
         return embedding
 

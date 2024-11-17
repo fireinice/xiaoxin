@@ -174,7 +174,7 @@ def step(model, batch, device=None, is_train=True):
         
         pred = model(drug['drug_input_ids'], drug['drug_att_masks'], target, is_train=is_train)
     else:
-        pred = model(drug, target)
+        pred = model(drug, target,is_train=is_train)
 
     label = Variable(torch.from_numpy(np.array(label)).float()).to(device)
     return pred, label
@@ -248,7 +248,7 @@ def main():
 
     drug_featurizer = get_featurizer(config.drug_featurizer, save_dir=task_dir)
 
-    if config.model_architecture in ('DrugProteinAttention','DrugProteinMLP','ChemBertaProteinAttention','ChemBertaAttention'):
+    if config.model_architecture in ('DrugProteinAttention','DrugProteinMLP','ChemBertaProteinAttention','ChemBertaProteinAttention_Local'):
         per_tok=True
     else:
         per_tok=False
@@ -262,7 +262,6 @@ def main():
 
         config.classify = False
         config.watch_metric = "val/pcc"
-
         datamodule = CSVDataModule(
             task_dir, 
             drug_featurizer,
@@ -275,7 +274,7 @@ def main():
             label_column=config.label_column
             )
 
-    elif config.model_architecture == "ChemBertaAttention":
+    elif config.model_architecture == "ChemBertaProteinAttention_Local":
 
         config.classify = False
         config.watch_metric = "val/pcc"
@@ -374,7 +373,7 @@ def main():
             latent_distance=config.latent_distance,
             classify=config.classify,
             num_classes=config.num_classes,
-            loss_type=config.loss_type
+            loss_type=config.loss_type,
         )
     else:
 
@@ -397,7 +396,6 @@ def main():
         model.load_state_dict(state_dict)
 
     logg.info(model)
-
 
 
     if config.contrastive:
@@ -529,13 +527,16 @@ def main():
                 model, batch, device
             )  # batch is (2048, 1024, 1)
 
-
             if config.classify:
                 label = label.to(torch.int64)
 
             loss = loss_fct(pred, label)
-            
-            """
+            # logg.info(f"[Step Log] Epoch: {epo}, Step: {i + 1}, Loss: {loss.cpu().detach().numpy():8f}")
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+
+        """
               wandb_log(
                 {
                     "train/step": (
@@ -547,11 +548,6 @@ def main():
                 do_wandb,
             )
             """
-          
-
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
 
         lr_scheduler.step()
         """
@@ -622,8 +618,6 @@ def main():
             
             """
 
-           
-
             logg.info(
                 f"Training at Contrastive Epoch {epo + 1} with loss {contrastive_loss.cpu().detach().numpy():8f}"
             )
@@ -633,8 +627,6 @@ def main():
             logg.info(
                 f"Updating contrastive margin to {contrastive_loss_fct.margin}"
             )
-
-        epoch_time_end = time()
 
         # Validation
         if epo % config.every_n_val == 0:
@@ -650,7 +642,7 @@ def main():
 
                 val_results["epoch"] = epo
                 val_results["Charts/epoch_time"] = (
-                    epoch_time_end - epoch_time_start
+                    time() - epoch_time_start
                 ) / config.every_n_val
 
                 #wandb_log(val_results, do_wandb)
@@ -681,8 +673,6 @@ def main():
 
 
                     """
-
-                   
 
                 logg.info(f"Validation at Epoch {epo + 1}")
                 for k, v in val_results.items():
@@ -737,10 +727,8 @@ def main():
                 """
 
 
-
         except Exception as e:
             logg.error(f"Testing failed with exception {e}")
-
 
     end_time = time()
 
@@ -789,8 +777,6 @@ def main():
 
                 
             """
-
-          
 
     except Exception as e:
         logg.error(f"Testing failed with exception {e}")

@@ -320,7 +320,7 @@ class MolRFeaturizer(Featurizer):
         tens = torch.from_numpy(embeddings).squeeze().float()
         return tens
 
-class ChemBertaTokenFeaturizer(Featurizer):
+class ChemBertaTokenFeaturizer(Featurizer): #只对Smiles格式化 不转化特征 转化特征在模型中处理的类
     def __init__(
             self,
             shape: int = 384,
@@ -335,7 +335,7 @@ class ChemBertaTokenFeaturizer(Featurizer):
 
         encoded_inputs = self._chemberta_tokenizer(
             seqs,
-            padding='longest',  # 填充到当前 batch 中最长的序列
+            padding='longest',
             truncation=True,
             add_special_tokens=False,
             max_length=self._max_len,
@@ -344,7 +344,7 @@ class ChemBertaTokenFeaturizer(Featurizer):
 
         return encoded_inputs
 
-class ChemBertaFeaturizer(Featurizer):
+class ChemBertaFeaturizer(Featurizer): #将Smiles转化成特征并且缓存到本地的类
     def __init__(
             self,
             shape: int = 384,
@@ -352,12 +352,12 @@ class ChemBertaFeaturizer(Featurizer):
             save_dir: Path = Path().absolute(),
     ):
         super().__init__("ChemBERTa", shape, save_dir)
-        self._max_len = 512
+        self.per_tok = False
         self.tokenizer = AutoTokenizer.from_pretrained('./models/chemberta')
         self.model = AutoModel.from_pretrained('./models/chemberta')
         self.model.eval()
 
-    def smiles_to_chemberta(self,smile:str) -> torch.Tensor:
+    def smiles_to_chemberta(self, smile: str) -> torch.Tensor:
 
         try:
             smile = canonicalize(smile)
@@ -365,31 +365,26 @@ class ChemBertaFeaturizer(Featurizer):
             logg.warning(f"Failed to canonicalize SMILES: {smile}. Skipping. Error: {e}")
 
         try:
-            inputs = self.tokenizer(smile,add_special_tokens=False,truncation=True,return_tensors="pt")
+            inputs = self.tokenizer(smile, add_special_tokens=False, truncation=True,return_tensors="pt")
 
             with torch.no_grad():
                 outputs = self.model(**inputs)
 
-            embedding = outputs.last_hidden_state.squeeze(0)
-
-            if embedding.dim() == 1:
-                logg.warning(f"have one hot embedding:{smile}")
-                embedding = embedding.unsqueeze(0)
+            embedding = outputs.last_hidden_state.squeeze()
 
         except Exception as e:
             logg.error(f"ChemBERTa failed to featurize: returning zero vector.")
             logg.error(e)
-            embedding = torch.zeros(self.shape)
-            embedding = embedding.unsqueeze(0)
+            embedding = torch.zeros(self.shape).unsqueeze(0)
 
         return embedding
 
-    def _transform(self, smile :str) -> torch.Tensor:
+    def _transform(self, smile: str) -> torch.Tensor:
         feats = self.smiles_to_chemberta(smile)
-        if feats.shape[-1] != self.shape :
+        if feats.shape[-1] != self.shape:
             logg.warning("Failed to featurize: appending zero vector")
             feats = torch.zeros(self.shape)
-
+        if not self.per_tok : feats = feats.mean(0)
         return feats
 
 

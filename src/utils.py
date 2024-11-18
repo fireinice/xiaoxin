@@ -78,7 +78,7 @@ def canonicalize(smiles):
     if mol is not None:
         return Chem.MolToSmiles(mol, isomericSmiles=True)
     else:
-        return None
+        return smiles
 
 
 def smiles2morgan(s, radius=2, nBits=2048):

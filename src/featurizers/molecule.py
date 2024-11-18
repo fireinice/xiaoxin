@@ -352,38 +352,26 @@ class ChemBertaFeaturizer(Featurizer): #将Smiles转化成特征并且缓存到�
             save_dir: Path = Path().absolute(),
     ):
         super().__init__("ChemBERTa", shape, save_dir)
-        self.per_tok = False
+        self.per_tok = True
         self.tokenizer = AutoTokenizer.from_pretrained('./models/chemberta')
         self.model = AutoModel.from_pretrained('./models/chemberta')
         self.model.eval()
 
     def smiles_to_chemberta(self, smile: str) -> torch.Tensor:
 
-        try:
-            smile = canonicalize(smile)
-        except Exception as e:
-            logg.warning(f"Failed to canonicalize SMILES: {smile}. Skipping. Error: {e}")
+        smile = canonicalize(smile)
 
-        try:
-            inputs = self.tokenizer(smile, add_special_tokens=False, truncation=True,return_tensors="pt")
+        inputs = self.tokenizer(smile, add_special_tokens=False,truncation=True,return_tensors="pt")
 
-            with torch.no_grad():
-                outputs = self.model(**inputs)
+        with torch.no_grad():
+            outputs = self.model(**inputs)
 
-            embedding = outputs.last_hidden_state.squeeze()
-
-        except Exception as e:
-            logg.error(f"ChemBERTa failed to featurize: returning zero vector.")
-            logg.error(e)
-            embedding = torch.zeros(self.shape).unsqueeze(0)
+        embedding = outputs.last_hidden_state.squeeze()
 
         return embedding
 
     def _transform(self, smile: str) -> torch.Tensor:
         feats = self.smiles_to_chemberta(smile)
-        if feats.shape[-1] != self.shape:
-            logg.warning("Failed to featurize: appending zero vector")
-            feats = torch.zeros(self.shape)
         if not self.per_tok : feats = feats.mean(0)
         return feats
 

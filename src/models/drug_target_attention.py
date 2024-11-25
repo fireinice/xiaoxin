@@ -3,8 +3,8 @@ from torch import nn
 
 import pytorch_lightning as pl
 from pytorch_lightning.utilities import rank_zero_info
-import torchmetrics
-from ..architectures import ChemBertaProteinAttention_Local
+
+from ..architectures import ChemBertaProteinAttention_Local, ChemBertaProteinAttention
 from .base_model import BaseModelModule
 
 
@@ -19,23 +19,38 @@ class DrugTargetAttention(BaseModelModule):
         loss_type="CE",
         lr=1e-4,
         lr_t0=10,
+        fine_tune=False
     ):
         super().__init__(
             drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr
         )
-        self.model = ChemBertaProteinAttention_Local(
-            drug_dim,
-            target_dim,
-            latent_dim,
-            classify=classify,
-            num_classes=num_classes,
-            loss_type=loss_type,
-        )
+        if not fine_tune:
+            self.model = ChemBertaProteinAttention_Local(
+                drug_dim,
+                target_dim,
+                latent_dim,
+                classify=classify,
+                num_classes=num_classes,
+                loss_type=loss_type,
+            )
+        else:
+            self.model = ChemBertaProteinAttention(
+                drug_dim,
+                target_dim,
+                latent_dim,
+                classify=classify,
+                num_classes=num_classes,
+                loss_type=loss_type,
+                fine_tune=fine_tune
+            )
         self.lr_t0 = lr_t0
-        self.validation_step_outputs = []        
+        self.validation_step_outputs = []
 
     def forward(self, drug, target):
-        return self.model(drug, target)
+        if isinstance(drug, dict):
+            return self.model(drug['drug_input_ids'], drug['drug_att_masks'], target)
+        else:
+            return self.model(drug, target)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
@@ -63,14 +78,14 @@ class DrugTargetAttention(BaseModelModule):
     def on_validation_epoch_end(self):
         avg_loss = torch.stack([x['loss'] for x in self.validation_step_outputs]).mean()
         preds = torch.concat([x['preds'] for x in self.validation_step_outputs])
-        target = torch.concat([x['target'] for x in self.validation_step_outputs]) 
-        self.print(f"*****Epoch {self.current_epoch}*****")  
-        self.print(f"loss:{avg_loss}")             
+        target = torch.concat([x['target'] for x in self.validation_step_outputs])
+        self.print(f"*****Epoch {self.current_epoch}*****")
+        self.print(f"loss:{avg_loss}")
         for name, metric in self.metrics.items():
             value = metric(preds, target)
             self.log(f"val/{name}", value)
             self.print(f"val/{name}: {value}")
-        self.validation_step_outputs.clear()            
+        self.validation_step_outputs.clear()
 
     def test_step_end(self, outputs):
         for name, metric in self.metrics.items():

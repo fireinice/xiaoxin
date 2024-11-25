@@ -10,6 +10,7 @@ from omegaconf import OmegaConf
 
 from src.models.drug_target_attention import DrugTargetAttention
 from src.datamodule.pre_encoded_datamodule import PreEncodedDataModule
+from src.datamodule.finetune_chembert_datamodule import FineTuneChemBertDataModule
 
 
 def init_config() -> OmegaConf:
@@ -57,8 +58,12 @@ if __name__ == "__main__":
         classify=config.classify,
         lr=config.lr,
         lr_t0=config.lr_t0,
-    )
-    dm = PreEncodedDataModule(config)
+        fine_tune=config.finetune_chembert
+    )    
+    if config.finetune_chembert:
+        dm = FineTuneChemBertDataModule(config)
+    else:
+        dm = PreEncodedDataModule(config)
     strategy = strategies.DDPStrategy(find_unused_parameters=True)
     trainer = Trainer(strategy=strategy, accelerator="gpu", devices='auto', fast_dev_run=config.dev)
     trainer.fit(model, datamodule=dm)

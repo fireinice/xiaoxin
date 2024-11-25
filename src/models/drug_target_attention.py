@@ -1,11 +1,173 @@
 import torch
-from torch import nn
+from torch import nn, Tensor
 
-import pytorch_lightning as pl
-from pytorch_lightning.utilities import rank_zero_info
+from transformers import AutoModel
 
-from ..architectures import ChemBertaProteinAttention_Local, ChemBertaProteinAttention
+from ..architectures import ChemBertaProteinAttention, MLP
 from .base_model import BaseModelModule
+
+
+# 三维的Chemberta和三维的Porbert  从本地加载三维的Chembert的特征
+class ChemBertaProteinAttentionPreEncoded(nn.Module):
+    def __init__(
+        self,
+        drug_shape=384,
+        target_shape=1024,
+        latent_dimension=1024,
+        latent_activation=nn.ReLU,
+        latent_distance="Cosine",
+        classify=True,
+        num_classes=2,
+        loss_type="CE",
+    ):
+        super().__init__()
+        self.drug_shape = drug_shape
+        self.target_shape = target_shape
+        self.latent_dimension = latent_dimension
+        self.do_classify = classify
+        self.loss_type = loss_type
+
+        self.drug_projector = nn.Sequential(
+            nn.Linear(self.drug_shape, latent_dimension),
+        )
+        self.target_projector = nn.Sequential(
+            nn.Linear(self.target_shape, latent_dimension),
+        )
+        self.input_norm = nn.LayerNorm(latent_dimension)
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=self.latent_dimension, num_heads=16, dropout=0.1, batch_first=True
+        )
+        self.max_pool = nn.AdaptiveMaxPool1d(1)
+
+        self.mlp = MLP(latent_dimension * 2, 512, 256)
+
+        if classify:
+            if self.num_classes == 2:
+                self.predict_layer = nn.Sequential(
+                    nn.Linear(256, 1, bias=True),
+                    nn.Sigmoid(),
+                )
+            else:
+                if self.loss_type == "OR":
+                    self.predict_layer = nn.Sequential(
+                        nn.Linear(256, self.num_classes - 1, bias=True), nn.Sigmoid()
+                    )
+                else:
+                    self.predict_layer = nn.Sequential(
+                        nn.Linear(256, num_classes, bias=True),
+                    )
+        else:
+            self.predict_layer = nn.Sequential(
+                nn.Linear(256, 1, bias=True),
+                nn.ReLU(),
+            )
+
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module):
+        """Initialize the weights"""
+        if isinstance(module, nn.Linear):
+            # Slightly different from the TF version which uses truncated_normal for initialization
+            # cf https://github.com/pytorch/pytorch/pull/5617
+            torch.nn.init.xavier_normal_(module.weight.data)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.xavier_normal_(module.weight.data)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+
+    def get_att_mask(self, drug: Tensor):
+        batch, seq, dim = drug.shape
+        mask = torch.mean(drug, dim=-1)
+        mask = torch.where(mask != 0.0, False, True)
+        return mask
+
+    def ordinal_regression_predict(self, predict):
+        predict = (predict > 0.5).sum(dim=1)
+        predict = torch.nn.functional.one_hot(predict, num_classes=self.num_classes).to(
+            torch.float32
+        )
+        return predict
+
+    def align_embedding(
+        self, embedding: Tensor, projector: nn.Sequential, dim: int
+    ) -> Tensor:
+        if dim != self.latent_dimension:
+            projection = projector(embedding)
+        else:
+            projection = embedding
+        return self.input_norm(projection)
+
+    def cross_attetion(
+        self, q: Tensor, k: Tensor, v: Tensor, q_mask, k_mask
+    ) -> Tensor:
+        attention, _ = self.cross_attn(q, k, v, key_padding_mask=k_mask)
+        attention = attention * (~q_mask).unsqueeze(-1).float()
+        # max pool along sentence dimension
+        output = self.max_pool(attention.permute(0, 2, 1)).squeeze()
+        return output
+
+    def forward(self, drug: Tensor, target: Tensor, is_train=True):
+        drug_projection = self.align_embedding(
+            drug, self.drug_projector, self.drug_shape
+        )
+        target_projection = self.align_embedding(
+            target, self.target_projector, self.target_shape
+        )
+
+        target_att_mask = self.get_att_mask(target)
+        drug_att_mask = self.get_att_mask(drug)
+        drug_output = self.cross_attetion(
+            drug_projection,
+            target_projection,
+            target_projection,
+            drug_att_mask,
+            target_att_mask,
+        )
+        target_output = self.cross_attetion(
+            target_projection,
+            drug_projection,
+            drug_projection,
+            target_att_mask,
+            drug_att_mask,
+        )
+
+        out_embedding = torch.concat([drug_output, target_output], dim=-1)
+
+        x = self.mlp(out_embedding)
+        predict = self.predict_layer(x)
+
+        predict = torch.squeeze(predict, dim=-1)
+
+        if is_train == False and self.loss_type == "OR":
+            return self.ordinal_regression_predict(predict)
+        else:
+            return predict
+
+
+class ChemBertaProteinAttention(ChemBertaProteinAttentionPreEncoded):
+    def __init__(self, *args, finetune=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.finetune = finetune
+        self.drug_model = AutoModel.from_pretrained("./models/chemberta")
+
+    def forward(
+        self,
+        drug_input_ids: Tensor,
+        drug_att_masks: Tensor,
+        target: Tensor,
+        is_train=True,
+    ):
+        drug = self.drug_model(
+            input_ids=drug_input_ids, attention_mask=drug_att_masks
+        ).last_hidden_state
+        if not self.finetune:
+            drug = drug.detach()
+        super().forward(drug, target, is_train)
 
 
 class DrugTargetAttention(BaseModelModule):
@@ -19,13 +181,13 @@ class DrugTargetAttention(BaseModelModule):
         loss_type="CE",
         lr=1e-4,
         lr_t0=10,
-        fine_tune=False
+        fine_tune=False,
     ):
         super().__init__(
             drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr
         )
         if not fine_tune:
-            self.model = ChemBertaProteinAttention_Local(
+            self.model = ChemBertaProteinAttentionPreEncoded(
                 drug_dim,
                 target_dim,
                 latent_dim,
@@ -41,14 +203,14 @@ class DrugTargetAttention(BaseModelModule):
                 classify=classify,
                 num_classes=num_classes,
                 loss_type=loss_type,
-                fine_tune=fine_tune
+                finetune=True,
             )
         self.lr_t0 = lr_t0
         self.validation_step_outputs = []
 
     def forward(self, drug, target):
         if isinstance(drug, dict):
-            return self.model(drug['drug_input_ids'], drug['drug_att_masks'], target)
+            return self.model(drug["drug_input_ids"], drug["drug_att_masks"], target)
         else:
             return self.model(drug, target)
 
@@ -76,9 +238,9 @@ class DrugTargetAttention(BaseModelModule):
         return result
 
     def on_validation_epoch_end(self):
-        avg_loss = torch.stack([x['loss'] for x in self.validation_step_outputs]).mean()
-        preds = torch.concat([x['preds'] for x in self.validation_step_outputs])
-        target = torch.concat([x['target'] for x in self.validation_step_outputs])
+        avg_loss = torch.stack([x["loss"] for x in self.validation_step_outputs]).mean()
+        preds = torch.concat([x["preds"] for x in self.validation_step_outputs])
+        target = torch.concat([x["target"] for x in self.validation_step_outputs])
         self.print(f"*****Epoch {self.current_epoch}*****")
         self.print(f"loss:{avg_loss}")
         for name, metric in self.metrics.items():
@@ -86,8 +248,3 @@ class DrugTargetAttention(BaseModelModule):
             self.log(f"val/{name}", value)
             self.print(f"val/{name}: {value}")
         self.validation_step_outputs.clear()
-
-    def test_step_end(self, outputs):
-        for name, metric in self.metrics.items():
-            metric(outputs["preds"], outputs["target"])
-            self.log(f"test/{name}", metric)

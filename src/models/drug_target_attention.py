@@ -1,10 +1,10 @@
 import torch
+import torchtune
 from torch import nn, Tensor
-
 from transformers import AutoModel
 
-from ..architectures import ChemBertaProteinAttention, MLP
-from .base_model import BaseModelModule
+from src.architectures import ChemBertaProteinAttention, MLP
+from src.models.base_model import BaseModelModule
 
 
 # 三维的Chemberta和三维的Porbert  从本地加载三维的Chembert的特征
@@ -26,6 +26,8 @@ class ChemBertaProteinAttentionPreEncoded(nn.Module):
         self.latent_dimension = latent_dimension
         self.do_classify = classify
         self.loss_type = loss_type
+        self.head_size = 64
+        self.num_heads = int(self.latent_dimension / self.head_size)
 
         self.drug_projector = nn.Sequential(
             nn.Linear(self.drug_shape, latent_dimension),
@@ -35,9 +37,10 @@ class ChemBertaProteinAttentionPreEncoded(nn.Module):
         )
         self.input_norm = nn.LayerNorm(latent_dimension)
         self.cross_attn = nn.MultiheadAttention(
-            embed_dim=self.latent_dimension, num_heads=16, dropout=0.1, batch_first=True
+            embed_dim=self.latent_dimension, num_heads=self.num_heads, dropout=0.1, batch_first=True
         )
         self.max_pool = nn.AdaptiveMaxPool1d(1)
+        self.rpe = torchtune.modules.RotaryPositionalEmbeddings(self.head_size)
 
         self.mlp = MLP(latent_dimension * 2, 512, 256)
 
@@ -69,11 +72,11 @@ class ChemBertaProteinAttentionPreEncoded(nn.Module):
         if isinstance(module, nn.Linear):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
-            torch.nn.init.xavier_normal_(module.weight.data)
+            nn.init.xavier_normal_(module.weight.data)
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.Embedding):
-            torch.nn.init.xavier_normal_(module.weight.data)
+            nn.init.xavier_normal_(module.weight.data)
             if module.padding_idx is not None:
                 module.weight.data[module.padding_idx].zero_()
         elif isinstance(module, nn.LayerNorm):
@@ -88,7 +91,7 @@ class ChemBertaProteinAttentionPreEncoded(nn.Module):
 
     def ordinal_regression_predict(self, predict):
         predict = (predict > 0.5).sum(dim=1)
-        predict = torch.nn.functional.one_hot(predict, num_classes=self.num_classes).to(
+        predict = nn.functional.one_hot(predict, num_classes=self.num_classes).to(
             torch.float32
         )
         return predict
@@ -102,14 +105,22 @@ class ChemBertaProteinAttentionPreEncoded(nn.Module):
             projection = embedding
         return self.input_norm(projection)
 
-    def cross_attetion(
-        self, q: Tensor, k: Tensor, v: Tensor, q_mask, k_mask
-    ) -> Tensor:
+    def cross_attetion(self, q: Tensor, k: Tensor, v: Tensor, q_mask, k_mask) -> Tensor:
         attention, _ = self.cross_attn(q, k, v, key_padding_mask=k_mask)
         attention = attention * (~q_mask).unsqueeze(-1).float()
         # max pool along sentence dimension
         output = self.max_pool(attention.permute(0, 2, 1)).squeeze()
         return output
+
+    def position(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        # https://raw.githubusercontent.com/mohitpg/LLMs-from-scratch/445cb0545ab53c7bf416ca3aa47bf44ed9f12566/LLAMA.py
+        B, T, D = x.shape
+        q = k = x.view((B, T, self.num_heads, self.head_size))
+        q = self.rpe(q)
+        k = self.rpe(k)
+        q = q.view((B, T, D))
+        k = k.view((B, T, D))
+        return (q, k)
 
     def forward(self, drug: Tensor, target: Tensor, is_train=True):
         drug_projection = self.align_embedding(
@@ -121,16 +132,18 @@ class ChemBertaProteinAttentionPreEncoded(nn.Module):
 
         target_att_mask = self.get_att_mask(target)
         drug_att_mask = self.get_att_mask(drug)
+        drug_query, drug_key = self.position(drug_projection)
+        target_query, target_key = self.position(target_projection)
         drug_output = self.cross_attetion(
-            drug_projection,
-            target_projection,
+            drug_query,
+            target_key,
             target_projection,
             drug_att_mask,
             target_att_mask,
         )
         target_output = self.cross_attetion(
-            target_projection,
-            drug_projection,
+            target_query,
+            drug_key,
             drug_projection,
             target_att_mask,
             drug_att_mask,
@@ -168,6 +181,22 @@ class ChemBertaProteinAttention(ChemBertaProteinAttentionPreEncoded):
         if not self.finetune:
             drug = drug.detach()
         super().forward(drug, target, is_train)
+
+
+class ChemBertaProteinBert(ChemBertaProteinAttentionPreEncoded):
+    def forward(
+        self,
+        drug_input_ids: Tensor,
+        drug_att_masks: Tensor,
+        target: Tensor,
+        is_train=True,
+    ):
+        drug = self.drug_model(
+            input_ids=drug_input_ids, attention_mask=drug_att_masks
+        ).last_hidden_state
+        if not self.finetune:
+            drug = drug.detach()
+        return super().forward(drug, target, is_train)
 
 
 class DrugTargetAttention(BaseModelModule):

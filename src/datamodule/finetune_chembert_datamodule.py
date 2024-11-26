@@ -1,13 +1,12 @@
-from src.featurizers.molecule import ChemBertaFeaturizer, ChemBertaTokenFeaturizer
 import torch
 import numpy as np
 from omegaconf import OmegaConf
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset, DataLoader
 
-from src.utils import get_featurizer
 from src.featurizers.protein import FOLDSEEK_MISSING_IDX, ProtBertTokenFeaturizer
-from .dg_datamodule import DGDataModule
+from src.featurizers.molecule import ChemBertaTokenFeaturizer
+from src.datamodule.dg_datamodule import DGDataModule
 
 
 class CustomDataset(Dataset):
@@ -35,17 +34,16 @@ class FineTuneChemBertDataModule(DGDataModule):
             "ChemBertaProteinAttention",
             "ChemBertaProteinAttention_Local",
         ):
-            cross_attention = True
+            self.cross_attention = True
         else:
-            cross_attention = False
+            self.cross_attention = False
 
         self.drug_featurizer = ChemBertaTokenFeaturizer(
-            config.drug_featurizer, save_dir=self._task_dir
+            save_dir=self._task_dir
         )
         self.target_featurizer = ProtBertTokenFeaturizer(
-            per_tok=cross_attention, save_dir=self._task_dir
+            per_tok=self.cross_attention, save_dir=self._task_dir
         )
-        self.token_cache = {}
 
     def prepare_data(self):
         self.prepare_featurizer(self.target_featurizer, self.all_targets)
@@ -60,7 +58,7 @@ class FineTuneChemBertDataModule(DGDataModule):
         if stage == "fit" or stage is None:
             self.train_data = CustomDataset(self.df_train)
             self.val_data = CustomDataset(self.df_val)
-            self.test_data = CustomDataset(self.df_test)            
+            self.test_data = CustomDataset(self.df_test)
 
         if stage == "test" or stage is None:
             self.test_data = CustomDataset(self.df_test)
@@ -101,7 +99,7 @@ class FineTuneChemBertDataModule(DGDataModule):
             shuffle=self.shuffle,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
-            pin_memory=True            
+            pin_memory=True
         )
 
     def val_dataloader(self):
@@ -121,5 +119,5 @@ class FineTuneChemBertDataModule(DGDataModule):
             shuffle=self.shuffle,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
-            pin_memory=True            
+            pin_memory=True
         )

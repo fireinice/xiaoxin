@@ -1,6 +1,14 @@
 import os
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+from torch import nn
+
+from src.datamodule.baseline_datamodule import BaselineDataModule
+from src.datamodule.morgan_chembert_datamodule import MorganChembertDataModule
+from src.models.lightning_model import DrugTargetCoembeddingLightning
+from src.models.morgan_chembert_model import MorganChembertAttention
+from src.models.morgan_model import MorganAttention
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from argparse import ArgumentParser
 
@@ -34,8 +42,8 @@ def init_config() -> OmegaConf:
     config = OmegaConf.load(args.config)
     arg_overrides = {k: v for k, v in vars(args).items() if v is not None}
     config.update(arg_overrides)
-    if config.model_architecture == "ChemBertaProteinAttention_Local":
-        config.classify = False
+    if config.label_column == 'Y':
+        config.classify = True
         config.watch_metric = "val/pcc"
     else:
         config.classify = False
@@ -46,24 +54,30 @@ def init_config() -> OmegaConf:
 
 if __name__ == "__main__":
     config = init_config()
-
     rank_zero_info(config)
     # print(config)
     # 固定训练过程
     # FIXME: here should not be replicate
     seed_everything(config.replicate, workers=True)
     # seed_everything(44, workers=True)
-    model = DrugTargetAttention(
-        latent_dim=config.latent_dimension,
-        classify=config.classify,
-        lr=config.lr,
-        lr_t0=config.lr_t0,
-        fine_tune=config.finetune_chembert
-    )    
-    if config.finetune_chembert:
-        dm = FineTuneChemBertDataModule(config)
-    else:
-        dm = PreEncodedDataModule(config)
+    if config.model_architecture == "DrugTargetCoembedding":
+        model = DrugTargetCoembeddingLightning(
+            latent_dim= config.latent_dimension,
+            classify=config.classify
+        )
+        dm = BaselineDataModule(config)
+    if config.model_architecture == "MorganAttention":
+        model = MorganAttention()
+        dm = BaselineDataModule()
+    if config.model_architecture == "MorganChembertAttention":
+        model = MorganChembertAttention()
+        dm = MorganChembertDataModule()
+    if config.model_architecture == "DrugTargetAttention":
+        model = DrugTargetAttention()
+        if config.finetune_chembert:
+            dm = FineTuneChemBertDataModule(config)
+        else:
+            dm = PreEncodedDataModule(config)
     strategy = strategies.DDPStrategy(find_unused_parameters=True)
     trainer = Trainer(strategy=strategy, accelerator="gpu", devices='auto', fast_dev_run=config.dev)
     trainer.fit(model, datamodule=dm)

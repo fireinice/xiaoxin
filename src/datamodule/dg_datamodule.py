@@ -1,11 +1,9 @@
 import torch
 import logging
-
 from omegaconf import OmegaConf
 import pandas as pd
 from pytorch_lightning import LightningDataModule
 from tdc.benchmark_group import dti_dg_group
-
 from src.data import get_task_dir
 
 
@@ -31,7 +29,10 @@ class DGDataModule(LightningDataModule):
         self._data_dir = self._task_dir
         self._drug_column = "Drug"
         self._target_column = "Target"
-        self._label_column='Y'
+        if config.classify:
+            self._label_column = 'Y'
+        else:
+            self._label_column = 'origin_Y'
         self._seed = config.replicate
         self.load_data()
 

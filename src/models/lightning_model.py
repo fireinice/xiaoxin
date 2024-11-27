@@ -9,7 +9,7 @@ class DrugTargetCoembeddingLightning(pl.LightningModule):
     def __init__(
         self,
         drug_dim=2048,
-        target_dim=100,
+        target_dim=1024,
         latent_dim=1024,
         activation=nn.ReLU,
         classify=True,
@@ -18,10 +18,9 @@ class DrugTargetCoembeddingLightning(pl.LightningModule):
         super().__init__()
 
         self.drug_dim = drug_dim
-        self.target_dim = drug_dim
+        self.target_dim = target_dim
         self.latent_dim = latent_dim
         self.activation = activation
-
         self.classify = classify
         self.lr = lr
 
@@ -72,6 +71,7 @@ class DrugTargetCoembeddingLightning(pl.LightningModule):
     def training_step(self, train_batch, batch_idx):
         drug, protein, label = train_batch
         similarity = self.forward(drug, protein)
+        similarity = similarity.to(torch.float64)  # 将 similarity 转换为 float64
 
         if self.classify:
             sigmoid = torch.nn.Sigmoid()
@@ -79,7 +79,6 @@ class DrugTargetCoembeddingLightning(pl.LightningModule):
             loss_fct = torch.nn.BCELoss()
         else:
             loss_fct = torch.nn.MSELoss()
-
         loss = loss_fct(similarity, label)
         self.log("train/loss", loss)
 

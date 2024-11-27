@@ -42,19 +42,14 @@ class BaseModelModule(pl.LightningModule):
             else:
                 self.loss_fct = torch.nn.CrossEntropyLoss()
             self.metrics = {
-                "class_accuracy": torchmetrics.classification.MulticlassAccuracy(
-                    num_classes=self.num_classes, average=None
-                ),
-                "class_recall": torchmetrics.classification.MulticlassRecall(
-                    num_classes=self.num_classes, average=None
-                ),
-                "aupr": torchmetrics.classification.MulticlassAveragePrecision(
-                    num_classes=self.num_classes
-                ),
-                "ConfusionMatrix": torchmetrics.ConfusionMatrix(
-                    task="multiclass", num_classes=self.num_classes
-                ),
-            }
+                "class_accuracy": torchmetrics.classification.MulticlassAccuracy(num_classes=self.num_classes,average=None),
+                "class_recall": torchmetrics.classification.MulticlassRecall(num_classes=self.num_classes, average=None),
+                "class_precision":torchmetrics.classification.MulticlassPrecision(num_classes=self.num_classes,average=None),
+                "F1Score": torchmetrics.classification.MulticlassF1Score(num_classes=self.num_classes,average=None),
+                "F1Score_Average": torchmetrics.classification.MulticlassF1Score(num_classes=self.num_classes, average='weighted'),
+                "ConfusionMatrix":torchmetrics.ConfusionMatrix(task="multiclass", num_classes=self.num_classes),
+                }
+
         # https://github.com/Lightning-AI/torchmetrics/issues/531
         self.metrics = torch.nn.ModuleDict(self.metrics)
 

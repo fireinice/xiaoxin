@@ -1,11 +1,9 @@
 import torch
 import logging
-
 from omegaconf import OmegaConf
 from pytorch_lightning import LightningDataModule
-from src.data import CSVDataModule, TestModule, get_task_dir
+from src.data import CSVDataModule, TDCDataModule_Local, get_task_dir
 from src.utils import get_featurizer
-
 
 class PreEncodedDataModule(LightningDataModule):
     def __init__(self, config: OmegaConf) -> None:
@@ -39,7 +37,7 @@ class PreEncodedDataModule(LightningDataModule):
         )
 
         if config.model_architecture == "ChemBertaProteinAttention_Local":
-            self.datamodule = TestModule(
+            self.datamodule = TDCDataModule_Local(
                 str(task_dir),
                 drug_featurizer,
                 target_featurizer,
@@ -73,7 +71,7 @@ class PreEncodedDataModule(LightningDataModule):
         return self.datamodule.train_dataloader()
 
     def val_dataloader(self):
-        return self.datamodule.test_dataloader()        
+        return self.datamodule.test_dataloader()
         return self.datamodule.val_dataloader()
 
     def test_dataloader(self):

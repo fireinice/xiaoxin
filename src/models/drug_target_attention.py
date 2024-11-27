@@ -3,8 +3,8 @@ import torchtune
 from torch import nn, Tensor
 from transformers import AutoModel
 
-from src.architectures import ChemBertaProteinAttention, MLP
-from src.models.base_model import BaseModelModule
+from ..architectures import ChemBertaProteinAttention, MLP
+from .base_model import BaseModelModule
 
 
 # 三维的Chemberta和三维的Porbert  从本地加载三维的Chembert的特征
@@ -40,6 +40,7 @@ class ChemBertaProteinAttentionPreEncoded(nn.Module):
             embed_dim=self.latent_dimension, num_heads=self.num_heads, dropout=0.1, batch_first=True
         )
         self.max_pool = nn.AdaptiveMaxPool1d(1)
+        self.max_pool = nn.AdaptiveAvgPool1d(1)
         self.rpe = torchtune.modules.RotaryPositionalEmbeddings(self.head_size)
 
         self.mlp = MLP(latent_dimension * 2, 512, 256)
@@ -106,8 +107,8 @@ class ChemBertaProteinAttentionPreEncoded(nn.Module):
         return self.input_norm(projection)
 
     def cross_attetion(self, q: Tensor, k: Tensor, v: Tensor, q_mask, k_mask) -> Tensor:
-        attention, _ = self.cross_attn(q, k, v, key_padding_mask=k_mask)
-        attention = attention * (~q_mask).unsqueeze(-1).float()
+        attention, _ = self.cross_attn(q, k, v, key_padding_mask=k_mask, need_weights=False)
+        # attention = attention * (~q_mask).unsqueeze(-1).float()
         # max pool along sentence dimension
         output = self.max_pool(attention.permute(0, 2, 1)).squeeze()
         return output
@@ -122,7 +123,7 @@ class ChemBertaProteinAttentionPreEncoded(nn.Module):
         k = k.view((B, T, D))
         return (q, k)
 
-    def forward(self, drug: Tensor, target: Tensor, is_train=True):
+    def forward(self, drug: Tensor, target: Tensor,  is_train=True, drug_att_mask: Tensor | None = None):
         drug_projection = self.align_embedding(
             drug, self.drug_projector, self.drug_shape
         )
@@ -180,23 +181,8 @@ class ChemBertaProteinAttention(ChemBertaProteinAttentionPreEncoded):
         ).last_hidden_state
         if not self.finetune:
             drug = drug.detach()
-        super().forward(drug, target, is_train)
-
-
-class ChemBertaProteinBert(ChemBertaProteinAttentionPreEncoded):
-    def forward(
-        self,
-        drug_input_ids: Tensor,
-        drug_att_masks: Tensor,
-        target: Tensor,
-        is_train=True,
-    ):
-        drug = self.drug_model(
-            input_ids=drug_input_ids, attention_mask=drug_att_masks
-        ).last_hidden_state
-        if not self.finetune:
-            drug = drug.detach()
-        return super().forward(drug, target, is_train)
+        predict = super().forward(drug, target, is_train, drug_att_masks)
+        return predict
 
 
 class DrugTargetAttention(BaseModelModule):
@@ -208,7 +194,7 @@ class DrugTargetAttention(BaseModelModule):
         classify=True,
         num_classes=2,
         loss_type="CE",
-        lr=1e-4,
+        lr=5e-5,
         lr_t0=10,
         fine_tune=False,
     ):

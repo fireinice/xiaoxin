@@ -20,7 +20,7 @@ class CustomDataset(Dataset):
         item = self.dataframe.iloc[idx]
         drug = item["Drug"]
         target = item["Target"]
-        label = item["Y"]
+        label = item["origin_Y"]
         label = np.float32(label)
         return drug, target, label
 

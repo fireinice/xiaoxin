@@ -31,7 +31,7 @@ class DGDataModule(LightningDataModule):
         self._data_dir = self._task_dir
         self._drug_column = "Drug"
         self._target_column = "Target"
-        self._label_column='Y'
+        self._label_column=config.label_column
         self._seed = config.replicate
         self.load_data()
 
@@ -66,8 +66,6 @@ class DGDataModule(LightningDataModule):
         raise NotImplemented
 
     def setup_featurizer(self, featurizer, all_items):
-        if self._device.type == "cuda":
-            featurizer.cuda(self._device)
         featurizer.preload(all_items)
         featurizer.cpu()
 

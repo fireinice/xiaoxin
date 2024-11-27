@@ -5,6 +5,7 @@ from omegaconf import OmegaConf
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
+import numpy as np
 
 from src.featurizers.molecule import ChemBertaFeaturizer
 from src.featurizers.protein import FOLDSEEK_MISSING_IDX, ProtBertFeaturizer
@@ -34,7 +35,7 @@ class BinaryDataset(Dataset):
     def __getitem__(self, i: int):
         drug = self.drug_featurizer(self.drugs.iloc[i])
         target = self.target_featurizer(self.targets.iloc[i])
-        label = torch.tensor(self.labels.iloc[i])
+        label = torch.tensor(np.float32(self.labels.iloc[i]))
         return drug, target, label
 
 
@@ -46,8 +47,10 @@ class PreEncodedDataModule(FineTuneChemBertDataModule):
             "shuffle": self.shuffle,
             "num_workers": self.num_workers,
             "collate_fn": self.test_collate_fn,
+            "pin_memory": True,
         }
-        self.drug_featurizer = ChemBertaFeaturizer(save_dir=self._task_dir)
+        self.drug_featurizer = ChemBertaFeaturizer(
+            per_tok=self.cross_attention, save_dir=self._task_dir)
         self.target_featurizer = ProtBertFeaturizer(
             per_tok=self.cross_attention, save_dir=self._task_dir
         )
@@ -76,6 +79,13 @@ class PreEncodedDataModule(FineTuneChemBertDataModule):
                 self.df_val[self._drug_column],
                 self.df_val[self._target_column],
                 self.df_val[self._label_column],
+                self.drug_featurizer,
+                self.target_featurizer,
+            )
+            self.test_data = BinaryDataset(
+                self.df_test[self._drug_column],
+                self.df_test[self._target_column],
+                self.df_test[self._label_column],
                 self.drug_featurizer,
                 self.target_featurizer,
             )
@@ -114,11 +124,11 @@ class PreEncodedDataModule(FineTuneChemBertDataModule):
         return drugs, targets, labels
 
     def train_dataloader(self):
-        return DataLoader(self.data_train, **self._loader_kwargs, drop_last=True)
+        return DataLoader(self.train_data, **self._loader_kwargs, drop_last=True)
 
     def val_dataloader(self):
-        return DataLoader(self.data_test, **self._loader_kwargs, drop_last=True)
-        return DataLoader(self.data_val, **self._loader_kwargs, drop_last=True)
+        return DataLoader(self.test_data, **self._loader_kwargs, drop_last=True)
+        return DataLoader(self.val_data, **self._loader_kwargs, drop_last=True)
 
     def test_dataloader(self):
-        return DataLoader(self.data_test, **self._loader_kwargs, drop_last=True)
+        return DataLoader(self.test_data, **self._loader_kwargs, drop_last=True)

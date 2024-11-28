@@ -350,9 +350,10 @@ class ChemBertaFeaturizer(Featurizer): #将Smiles转化成特征并且缓存到�
             shape: int = 384,
             radius: int = 2,
             save_dir: Path = Path().absolute(),
+            per_tok: bool=False
     ):
         super().__init__("ChemBERTa", shape, save_dir)
-        self.per_tok = True
+        self.per_tok = per_tok
         self.tokenizer = AutoTokenizer.from_pretrained('./models/chemberta')
         self.model = AutoModel.from_pretrained('./models/chemberta')
         self.model.eval()

@@ -182,8 +182,9 @@ def get_featurizer(featurizer_string, *args, **kwargs):
     featurizer_string_list = featurizer_string.split(",")
     if len(featurizer_string_list) > 1:
         featurizer_list = [
-            getattr(featurizers, i.strip()) for i in featurizer_string_list
+            getattr(featurizers, i.strip())(*args, **kwargs) for i in featurizer_string_list
         ]
-        return featurizers.ConcatFeaturizer(featurizer_list, *args, **kwargs)
+        # return featurizers.ConcatFeaturizer(featurizer_list, *args, **kwargs)
+        return featurizer_list
     else:
         return getattr(featurizers, featurizer_string_list[0])(*args, **kwargs)

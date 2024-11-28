@@ -67,13 +67,26 @@ if __name__ == "__main__":
         )
         dm = BaselineDataModule(config)
     if config.model_architecture == "MorganAttention":
-        model = MorganAttention()
-        dm = BaselineDataModule()
+        model = MorganAttention(
+            latent_dim=config.latent_dimension,
+            classify=config.classify,
+            num_classes=config.num_classes,
+            loss_type=config.loss_type
+        )
+        dm = BaselineDataModule(config)
     if config.model_architecture == "MorganChembertAttention":
-        model = MorganChembertAttention()
-        dm = MorganChembertDataModule()
+        model = MorganChembertAttention(
+            latent_dim=config.latent_dimension,
+            classify=config.classify,
+            num_classes=config.num_classes,
+            loss_type=config.loss_type
+        )
+        dm = MorganChembertDataModule(config)
     if config.model_architecture == "DrugTargetAttention":
-        model = DrugTargetAttention()
+        model = DrugTargetAttention(
+            latent_dim=config.latent_dimension,
+            classify=config.classify
+        )
         if config.finetune_chembert:
             dm = FineTuneChemBertDataModule(config)
         else:

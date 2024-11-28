@@ -22,8 +22,7 @@ class BaselineDataModule(LightningDataModule):
             else:
                 self.logger.warn(f"Cannot find dataset {str(suffix_task_dir)}, fall back to {task_dir}")
         if config.model_architecture in (
-            "DrugProteinAttention",
-            "DrugProteinMLP",
+            "MorganAttention",
         ):
             attention = True
         else:

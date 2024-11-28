@@ -714,8 +714,8 @@ class TDCDataModule(pl.LightningDataModule):
             dg_benchmark["test"],
         )
 
-        all_drugs = pd.concat([train_val, test])[self._drug_column].unique()
-        all_targets = pd.concat([train_val, test])[
+        self.all_drugs = pd.concat([train_val, test])[self._drug_column].unique()
+        self.all_targets = pd.concat([train_val, test])[
             self._target_column
         ].unique()
 
@@ -731,10 +731,10 @@ class TDCDataModule(pl.LightningDataModule):
             self.target_featurizer.cuda(self._device)
 
         if not self.drug_featurizer.path.exists():
-            self.drug_featurizer.write_to_disk(all_drugs)
+            self.drug_featurizer.write_to_disk(self.all_drugs)
 
         if not self.target_featurizer.path.exists():
-            self.target_featurizer.write_to_disk(all_targets)
+            self.target_featurizer.write_to_disk(self.all_targets)
 
         self.drug_featurizer.cpu()
         self.target_featurizer.cpu()
@@ -852,9 +852,6 @@ class CSVDataModule(TDCDataModule):
         self.token_cache = {}
 
     def prepare_data(self):
-        """
-        数据预处理，包括加载CSV文件和清理数据
-        """
         # 加载训练、验证和测试数据
         self.train_val_data = pd.read_csv(self.data_dir / "train_val.csv")
         self.test_data = pd.read_csv(self.data_dir / "test.csv")
@@ -864,9 +861,6 @@ class CSVDataModule(TDCDataModule):
         self.test_data.dropna(subset=["Drug", "Target", self.label_column], inplace=True)
 
     def setup(self, stage: T.Optional[str] = None):
-        """
-        数据划分，训练集、验证集和测试集的处理
-        """
         import numpy as np
 
         # 划分训练集和验证集
@@ -889,9 +883,6 @@ class CSVDataModule(TDCDataModule):
             self.test_data = CustomDataset(self.test_data, test_indices)
 
     def _collate_fn(self, drug_featurizer, target_featurizer, token_cache):
-        """
-        定义自定义的collate_fn方法，用于批处理
-        """
         def _fn(batch):
             drugs = []
             targets = []
@@ -976,11 +967,11 @@ class TDCDataModule_Local(TDCDataModule):
             "batch_size": batch_size,
             "shuffle": shuffle,
             "num_workers": num_workers,
-            "collate_fn":self._collate_fn(),  # 使用自定义的collate_fn
+            "collate_fn":self._collate_fn,  # 使用自定义的collate_fn
         }
 
     def _collate_fn(
-            args: T.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+         self, args: T.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
     ):
         d_emb = [a[0] for a in args]
         t_emb = [a[1] for a in args]
@@ -999,116 +990,19 @@ class TDCDataModule_Local(TDCDataModule):
         return drugs, targets, labels
 
     def prepare_data(self):
-        """
-        数据预处理：检查药物和靶标的特征化器是否已经存在，若不存在则生成
-        """
-        dg_group = dti_dg_group(path=self._data_dir)
-        dg_benchmark = dg_group.get("bindingdb_patent")
-
-        train_val, test = dg_benchmark["train_val"], dg_benchmark["test"]
-
-        all_drugs = pd.concat([train_val, test])[self._drug_column].unique()
-        all_targets = pd.concat([train_val, test])[self._target_column].unique()
-
-        if self.drug_featurizer.path.exists() and self.target_featurizer.path.exists():
-            logg.warning("Drug and target featurizers already exist")
-            return
-
-        # 将特征化器移动到GPU（如果需要）
-        if self._device.type == "cuda":
-            self.drug_featurizer.cuda(self._device)
-            self.target_featurizer.cuda(self._device)
-
-        # 写入药物和靶标的特征到磁盘
-        if not self.drug_featurizer.path.exists():
-            self.drug_featurizer.write_to_disk(all_drugs)
-
-        if not self.target_featurizer.path.exists():
-            self.target_featurizer.write_to_disk(all_targets)
-
-        # 移回CPU
-        self.drug_featurizer.cpu()
-        self.target_featurizer.cpu()
-
+        super().prepare_data()
     def setup(self, stage: T.Optional[str] = None):
-        """
-        设置数据集，划分训练集、验证集和测试集
-        """
-        dg_group = dti_dg_group(path=self._data_dir)
-        dg_benchmark = dg_group.get("bindingdb_patent")
-        dg_name = dg_benchmark["name"]
-
-        # 获取训练集和验证集的划分
-        self.df_train, self.df_val = dg_group.get_train_valid_split(
-            benchmark=dg_name, split_type="random", seed=self._seed
-        )
-        self.df_test = dg_benchmark["test"]
-
-        self._dataframes = [self.df_train, self.df_val]
-
-        all_drugs = pd.concat(
-            [i[self._drug_column] for i in self._dataframes]
-        ).unique()
-        all_targets = pd.concat(
-            [i[self._target_column] for i in self._dataframes]
-        ).unique()
-
-        # 将特征化器移动到GPU（如果需要）
-        if self._device.type == "cuda":
-            self.drug_featurizer.cuda(self._device)
-            self.target_featurizer.cuda(self._device)
-
-        # 预加载药物和靶标的特征
-        self.drug_featurizer.preload(all_drugs)
-        self.drug_featurizer.cpu()
-
-        self.target_featurizer.preload(all_targets)
-        self.target_featurizer.cpu()
-
-        # 准备训练、验证和测试数据集
-        if stage == "fit" or stage is None:
-            self.data_train = BinaryDataset(
-                self.df_train[self._drug_column],
-                self.df_train[self._target_column],
-                self.df_train[self._label_column],
-                self.drug_featurizer,
-                self.target_featurizer,
-            )
-
-            self.data_val = BinaryDataset(
-                self.df_val[self._drug_column],
-                self.df_val[self._target_column],
-                self.df_val[self._label_column],
-                self.drug_featurizer,
-                self.target_featurizer,
-            )
-
-        if stage == "test" or stage is None:
-            self.data_test = BinaryDataset(
-                self.df_test[self._drug_column],
-                self.df_test[self._target_column],
-                self.df_test[self._label_column],
-                self.drug_featurizer,
-                self.target_featurizer,
-            )
+        super().setup(stage)
 
     def train_dataloader(self):
-        """
-        返回训练集的数据加载器
-        """
         return DataLoader(self.data_train, **self._loader_kwargs, drop_last=True)
 
     def val_dataloader(self):
-        """
-        返回验证集的数据加载器
-        """
         return DataLoader(self.data_val, **self._loader_kwargs, drop_last=True)
 
     def test_dataloader(self):
-        """
-        返回测试集的数据加载器
-        """
         return DataLoader(self.data_test, **self._loader_kwargs, drop_last=True)
+
 #同时使用Morgan和Chemberta
 class BinaryDataset_Double(BinaryDataset):
     def __init__(
@@ -1172,14 +1066,21 @@ class TDCDataModule_Double(TDCDataModule):
             label_column=label_column
         )
 
+        self._loader_kwargs = {
+            "batch_size": batch_size,
+            "shuffle": shuffle,
+            "num_workers": num_workers,
+            "collate_fn": self._collate_fn # 使用自定义的collate_fn
+        }
+
         # 初始化第二个药物特征化器
         self.drug_featurizer_two = drug_featurizer[1]
 
     def _collate_fn(
-        self, args: T.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+        self,args: T.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
     ):
         d_emb_one = [a[0] for a in args]
-        d_emb_two = [a[1] for a in args]  # 第二个药物特征
+        d_emb_two = [a[1] for a in args]
         t_emb = [a[2] for a in args]
         labs = [a[3] for a in args]
 
@@ -1202,6 +1103,24 @@ class TDCDataModule_Double(TDCDataModule):
     def prepare_data(self):
         # 准备数据，与父类保持一致
         super().prepare_data()
+        if (
+            self.drug_featurizer.path.exists()
+            and self.drug_featurizer_two.path.exists()
+            and self.target_featurizer.path.exists()
+        ):
+            logg.warning("Drug_one and Drug_two and target featurizers already exist")
+            return
+
+        if self._device.type == "cuda":
+            self.drug_featurizer_two.cuda(self._device)
+
+        if not self.drug_featurizer_two.path.exists():
+            self.drug_featurizer_two.write_to_disk(self.all_drugs)
+
+        if not self.target_featurizer.path.exists():
+            self.target_featurizer.write_to_disk(self.all_targets)
+
+        self.drug_featurizer_two.cpu()
 
     def setup(self, stage: T.Optional[str] = None):
         # 设置训练/验证/测试数据
@@ -1211,9 +1130,9 @@ class TDCDataModule_Double(TDCDataModule):
         if self._device.type == "cuda":
             self.drug_featurizer_two.cuda(self._device)
 
-        self.drug_featurizer_two.preload(self.df_train[self._drug_column].unique())
-        self.drug_featurizer_two.preload(self.df_val[self._drug_column].unique())
-        self.drug_featurizer_two.preload(self.df_test[self._drug_column].unique())
+        self.drug_featurizer_two.preload(pd.concat(
+            [i[self._drug_column] for i in self._dataframes]
+        ).unique())
 
         self.drug_featurizer_two.cpu()
 
@@ -1223,7 +1142,7 @@ class TDCDataModule_Double(TDCDataModule):
                 self.df_train[self._drug_column],
                 self.df_train[self._target_column],
                 self.df_train[self._label_column],
-                self.drug_featurizer_one,
+                self.drug_featurizer,
                 self.drug_featurizer_two,
                 self.target_featurizer,
             )
@@ -1232,7 +1151,7 @@ class TDCDataModule_Double(TDCDataModule):
                 self.df_val[self._drug_column],
                 self.df_val[self._target_column],
                 self.df_val[self._label_column],
-                self.drug_featurizer_one,
+                self.drug_featurizer,
                 self.drug_featurizer_two,
                 self.target_featurizer,
             )
@@ -1242,7 +1161,7 @@ class TDCDataModule_Double(TDCDataModule):
                 self.df_test[self._drug_column],
                 self.df_test[self._target_column],
                 self.df_test[self._label_column],
-                self.drug_featurizer_one,
+                self.drug_featurizer,
                 self.drug_featurizer_two,
                 self.target_featurizer,
             )

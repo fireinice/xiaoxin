@@ -21,7 +21,7 @@ class MorganChembertDataModule(LightningDataModule):
             else:
                 self.logger.warn(f"Cannot find dataset {str(suffix_task_dir)}, fall back to {task_dir}")
         drug_featurizer = get_featurizer(
-            config.drug_featurizer, per_tok=False, save_dir=task_dir
+            config.drug_featurizer, save_dir=task_dir
         )
         target_featurizer = get_featurizer(
             config.target_featurizer, per_tok=True, save_dir=task_dir

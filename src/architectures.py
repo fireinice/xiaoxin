@@ -1067,9 +1067,8 @@ class DrugProteinAttention(nn.Module):
 
     def ordinal_regression_predict(self, predict):
 
-        predict = (predict > 0.5).sum(dim=1)
-
-        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
+        predict = (predict > 0.5).sum(dim=1) // 10
+        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes//10).to(torch.float32)
         return predict
 
 
@@ -1130,7 +1129,7 @@ class DrugProteinAttention_Double(DrugProteinAttention):
             latent_activation = latent_activation,
             latent_distance=latent_distance,
             classify=classify,
-            num_classes=num_classes,
+            num_classes=num_classes*10,
             loss_type=loss_type
         )
 
@@ -1297,8 +1296,8 @@ class ChemBertaProteinAttention(nn.Module):
 
     def ordinal_regression_predict(self, predict):
 
-        predict = (predict > 0.5).sum(dim=1)
-        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
+        predict = (predict > 0.5).sum(dim=1) // 10
+        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes//10).to(torch.float32)
         return predict
 
     def forward(self, 

@@ -38,7 +38,7 @@ class BaseModelModule(pl.LightningModule):
             }
         else:
             if self.loss_type == "OR":
-                self.loss_fct = self.diff_ordinal_regression_loss
+                self.loss_fct = self.map_ordinal_regression_loss
             else:
                 self.loss_fct = torch.nn.CrossEntropyLoss()
             self.metrics = {
@@ -69,6 +69,16 @@ class BaseModelModule(pl.LightningModule):
         weight = (1 - mask) * (factor * rank_diff.float()) + mask
         weighted_loss = (loss * weight).mean()
         return weighted_loss
+
+    def map_ordinal_regression_loss(self, y_pred, y_target):
+        num_thresholds = y_pred.size(1)
+        y_true_expanded = self.map_to_50_classes(y_target)
+        mask = (torch.arange(num_thresholds).to(y_pred.device).unsqueeze(0) < y_true_expanded).float()
+        loss = torch.nn.BCELoss()(y_pred, mask)
+        return loss
+
+    def map_to_50_classes(y_target):
+        return y_target.unsqueeze(1) * 10 + torch.arange(10).to(y_target.device).unsqueeze(0)
 
     def forward(self, drug, target):
         raise NotImplementedError()

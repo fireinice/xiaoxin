@@ -72,13 +72,10 @@ class BaseModelModule(pl.LightningModule):
 
     def map_ordinal_regression_loss(self, y_pred, y_target):
         num_thresholds = y_pred.size(1)
-        y_true_expanded = self.map_to_50_classes(y_target)
+        y_true_expanded = (y_target*10).unsqueeze(1).repeat(1, num_thresholds)
         mask = (torch.arange(num_thresholds).to(y_pred.device).unsqueeze(0) < y_true_expanded).float()
         loss = torch.nn.BCELoss()(y_pred, mask)
         return loss
-
-    def map_to_50_classes(y_target):
-        return y_target.unsqueeze(1) * 10 + torch.arange(10).to(y_target.device).unsqueeze(0)
 
     def forward(self, drug, target):
         raise NotImplementedError()

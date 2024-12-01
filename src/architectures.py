@@ -1019,10 +1019,17 @@ class DrugProteinAttention(nn.Module):
             else:
 
                 if self.loss_type == 'OR':
-                    self.predict_layer = nn.Sequential(
-                    nn.Linear(256, self.num_classes-1, bias=True),
-                    nn.Sigmoid()
-                    )
+                    # self.predict_layer = nn.Sequential(
+                    # nn.Linear(256, self.num_classes-1, bias=True),
+                    # nn.Sigmoid()
+                    # )
+                    self.predict_layer = nn.ModuleList([
+                        nn.Sequential(
+                            nn.Linear(256, 1, bias=True),
+                            nn.Sigmoid()
+                        )
+                        for _ in range(self.num_classes-1)
+                    ])
                 else:
                     self.predict_layer = nn.Sequential(
                     nn.Linear(256, num_classes, bias=True),
@@ -1067,8 +1074,8 @@ class DrugProteinAttention(nn.Module):
 
     def ordinal_regression_predict(self, predict):
 
-        predict = (predict > 0.5).sum(dim=1) // 10
-        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes//10).to(torch.float32)
+        predict = (predict > 0.5).sum(dim=1)
+        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
         return predict
 
 
@@ -1099,7 +1106,11 @@ class DrugProteinAttention(nn.Module):
         #out_embedding = torch.max(outputs, dim=1)[0]
 
         x = self.mlp(out_embedding)
-        predict = self.predict_layer(x)
+        if self.loss_type=='OR':
+            predict = [classifier(x) for classifier in self.predict_layer]
+            predict = torch.cat(predict, dim=1)
+        else:
+            predict = self.predict_layer(x)
 
         predict = torch.squeeze(predict,dim=-1)
 

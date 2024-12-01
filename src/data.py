@@ -24,6 +24,7 @@ from .featurizers.protein import FOLDSEEK_MISSING_IDX
 from .utils import get_logger
 from pathlib import Path
 import typing as T
+import pandas as pd
 import numpy as np
 
 logg = get_logger()
@@ -661,6 +662,40 @@ class DUDEDataModule(pl.LightningDataModule):
 #         return DataLoader(self.data_test,
 #                          **self._loader_kwargs
 #                          )
+
+def filter_max_segment(group):
+    category_counts = group['Y'].value_counts()
+    max_count = category_counts.max()
+    max_categories = category_counts[category_counts == max_count].index
+    if len(max_categories) > 1:
+        return pd.DataFrame(columns=group.columns)
+    max_category = max_categories[0]
+    return group[group['Y'] == max_category]
+
+def subsection(df):
+    df['Combine'] = df['Drug'] + '_' + df['Target']
+    bins = [-float('inf'), 50, 200, 1000, 10000, float('inf')]
+    refined_bins = []
+    for i in range(len(bins) - 1):
+        if bins[i] == -float('inf') or bins[i + 1] == float('inf'):
+            refined_bins.append(bins[i])
+        else:
+            refined_bins.extend(np.linspace(bins[i], bins[i + 1], 11)[:-1])
+    refined_bins.append(float('inf'))
+    labels = list(range(len(refined_bins) - 1))
+    df['Y'] = pd.cut(df['Y'], bins=refined_bins, labels=labels, right=False)
+    if all(df.groupby('Combine')['Y'].nunique() == 1):
+        print("所有组合已在单一段，无需筛选。")
+    else:
+        df = df.groupby('Combine', group_keys=False).apply(filter_max_segment)
+        print("筛选完成。")
+    df = df.drop(columns='Combine')
+    return df
+
+def regression(df):
+    df['Y'] = np.log(df['Y'])
+    return df
+
 #基类
 class TDCDataModule(pl.LightningDataModule):
     def __init__(
@@ -676,7 +711,7 @@ class TDCDataModule(pl.LightningDataModule):
             header=0,
             index_col=0,
             sep=",",
-            label_column="Y"
+            classify = False
     ):
 
         self._loader_kwargs = {
@@ -699,7 +734,8 @@ class TDCDataModule(pl.LightningDataModule):
 
         self._drug_column = "Drug"
         self._target_column = "Target"
-        self._label_column = label_column
+        self._label_column = "Y"
+        self._classify = classify
 
         self.drug_featurizer = drug_featurizer
         self.target_featurizer = target_featurizer
@@ -751,6 +787,11 @@ class TDCDataModule(pl.LightningDataModule):
         self.df_test = dg_benchmark["test"]
 
         self._dataframes = [self.df_train, self.df_val,self.df_test]
+
+        if self._classify:
+            self._dataframes = [subsection(i) for i in self._dataframes]
+        else:
+            self._dataframes = [regression(i) for i in self._dataframes]
 
         all_drugs = pd.concat(
             [i[self._drug_column] for i in self._dataframes]
@@ -833,7 +874,7 @@ class CSVDataModule(TDCDataModule):
             batch_size: int = 32,
             shuffle: bool = True,
             num_workers: int = 0,
-            label_column='origin_Y'
+            classify = False
     ):
         # 调用父类的初始化方法
         super().__init__(
@@ -845,7 +886,7 @@ class CSVDataModule(TDCDataModule):
             batch_size=batch_size,
             shuffle=shuffle,
             num_workers=num_workers,
-            label_column=label_column
+            classify = classify
         )
 
         # 初始化数据集相关变量
@@ -859,6 +900,13 @@ class CSVDataModule(TDCDataModule):
         # 清理数据，去掉缺失值的行
         self.train_val_data.dropna(subset=["Drug", "Target", self.label_column], inplace=True)
         self.test_data.dropna(subset=["Drug", "Target", self.label_column], inplace=True)
+
+        if self._classify:
+            self.train_val_data = subsection(self.train_val_data)
+            self.test_data = subsection(self.test_data)
+        else:
+            self.train_val_data = regression(self.train_val_data)
+            self.test_data = regression(self.test_data)
 
     def setup(self, stage: T.Optional[str] = None):
         import numpy as np
@@ -947,7 +995,7 @@ class TDCDataModule_Local(TDCDataModule):
             header=0,
             index_col=0,
             sep=",",
-            label_column="Y"
+            classify=False
     ):
         # 调用父类的初始化方法
         super().__init__(
@@ -959,7 +1007,7 @@ class TDCDataModule_Local(TDCDataModule):
             batch_size=batch_size,
             shuffle=shuffle,
             num_workers=num_workers,
-            label_column=label_column
+            classify = classify
         )
 
         # 数据加载参数
@@ -1048,7 +1096,7 @@ class TDCDataModule_Double(TDCDataModule):
             header=0,
             index_col=0,
             sep=",",
-            label_column="Y"
+            classify = False
     ):
         # 调用父类的初始化方法
         super().__init__(
@@ -1063,7 +1111,7 @@ class TDCDataModule_Double(TDCDataModule):
             header=header,
             index_col=index_col,
             sep=sep,
-            label_column=label_column
+            classify=classify
         )
 
         self._loader_kwargs = {

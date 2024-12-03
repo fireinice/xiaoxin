@@ -672,24 +672,18 @@ def filter_max_segment(group):
     max_category = max_categories[0]
     return group[group['Y'] == max_category]
 
-def subsection(df):
+def subsection(df,bins):
     df['Combine'] = df['Drug'] + '_' + df['Target']
-    bins = [-float('inf'), 50, 200, 1000, 10000, float('inf')]
-    refined_bins = []
-    for i in range(len(bins) - 1):
-        if bins[i] == -float('inf') or bins[i + 1] == float('inf'):
-            refined_bins.append(bins[i])
-        else:
-            refined_bins.extend(np.linspace(bins[i], bins[i + 1], 11)[:-1])
-    refined_bins.append(float('inf'))
-    labels = list(range(len(refined_bins) - 1))
-    df['Y'] = pd.cut(df['Y'], bins=refined_bins, labels=labels, right=False)
+    bins.append(float(np.inf))
+    labels = list(range(len(bins) - 1))
+    df['Y'] = pd.cut(df['Y'], bins=bins, labels=labels, right=False)
     if all(df.groupby('Combine')['Y'].nunique() == 1):
         print("所有组合已在单一段，无需筛选。")
     else:
         df = df.groupby('Combine', group_keys=False).apply(filter_max_segment)
         print("筛选完成。")
     df = df.drop(columns='Combine')
+    bins.pop()
     return df
 
 def regression(df):
@@ -703,6 +697,7 @@ class TDCDataModule(pl.LightningDataModule):
             data_dir: str,
             drug_featurizer: Featurizer,
             target_featurizer: Featurizer,
+            bins: list,
             device: torch.device = torch.device("cpu"),
             seed: int = 0,
             batch_size: int = 32,
@@ -736,6 +731,7 @@ class TDCDataModule(pl.LightningDataModule):
         self._target_column = "Target"
         self._label_column = "Y"
         self._classify = classify
+        self._bins = bins
 
         self.drug_featurizer = drug_featurizer
         self.target_featurizer = target_featurizer
@@ -786,10 +782,10 @@ class TDCDataModule(pl.LightningDataModule):
         )
         self.df_test = dg_benchmark["test"]
 
-        self._dataframes = [self.df_train, self.df_val,self.df_test]
+        self._dataframes = [self.df_train, self.df_val, self.df_test]
 
         if self._classify:
-            self._dataframes = [subsection(i) for i in self._dataframes]
+            self._dataframes = [subsection(i,bins=self._bins) for i in self._dataframes]
         else:
             self._dataframes = [regression(i) for i in self._dataframes]
 
@@ -869,6 +865,7 @@ class CSVDataModule(TDCDataModule):
             data_dir: str,
             drug_featurizer,
             target_featurizer,
+            bins: list,
             device: torch.device = torch.device("cpu"),
             seed: int = 0,
             batch_size: int = 32,
@@ -886,7 +883,8 @@ class CSVDataModule(TDCDataModule):
             batch_size=batch_size,
             shuffle=shuffle,
             num_workers=num_workers,
-            classify = classify
+            classify = classify,
+            bins=bins
         )
 
         # 初始化数据集相关变量
@@ -902,8 +900,8 @@ class CSVDataModule(TDCDataModule):
         self.test_data.dropna(subset=["Drug", "Target", self.label_column], inplace=True)
 
         if self._classify:
-            self.train_val_data = subsection(self.train_val_data)
-            self.test_data = subsection(self.test_data)
+            self.train_val_data = subsection(self.train_val_data,self._bins)
+            self.test_data = subsection(self.test_data,self._bins)
         else:
             self.train_val_data = regression(self.train_val_data)
             self.test_data = regression(self.test_data)
@@ -987,6 +985,7 @@ class TDCDataModule_Local(TDCDataModule):
             data_dir: str,
             drug_featurizer: Featurizer,
             target_featurizer: Featurizer,
+            bins:list,
             device: torch.device = torch.device("cpu"),
             seed: int = 0,
             batch_size: int = 32,
@@ -1007,7 +1006,8 @@ class TDCDataModule_Local(TDCDataModule):
             batch_size=batch_size,
             shuffle=shuffle,
             num_workers=num_workers,
-            classify = classify
+            classify = classify,
+            bins=bins
         )
 
         # 数据加载参数
@@ -1088,6 +1088,7 @@ class TDCDataModule_Double(TDCDataModule):
             data_dir: str,
             drug_featurizer: list,  # 传入两个药物特征化器
             target_featurizer: Featurizer,
+            bins: list,
             device: torch.device = torch.device("cpu"),
             seed: int = 0,
             batch_size: int = 32,
@@ -1111,7 +1112,8 @@ class TDCDataModule_Double(TDCDataModule):
             header=header,
             index_col=index_col,
             sep=sep,
-            classify=classify
+            classify=classify,
+            bins=bins
         )
 
         self._loader_kwargs = {

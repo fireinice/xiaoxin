@@ -36,7 +36,8 @@ class MorganChembertDataModule(LightningDataModule):
             batch_size=config.batch_size,
             shuffle=config.shuffle,
             num_workers=config.num_workers,
-            label_column=config.label_column
+            classify=config.classify,
+            bins=config.bins,
         )
 
     def prepare_data(self):

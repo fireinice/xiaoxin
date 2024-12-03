@@ -1017,7 +1017,6 @@ class DrugProteinAttention(nn.Module):
                  nn.Sigmoid(),
             )
             else:
-
                 if self.loss_type == 'OR':
                     # self.predict_layer = nn.Sequential(
                     # nn.Linear(256, self.num_classes-1, bias=True),
@@ -1026,7 +1025,8 @@ class DrugProteinAttention(nn.Module):
                     self.predict_layer = nn.ModuleList([
                         nn.Sequential(
                             nn.Linear(256, 1, bias=True),
-                            nn.Sigmoid()
+                            nn.Dropout(0.1),
+                            nn.Sigmoid(),
                         )
                         for _ in range(self.num_classes-1)
                     ])

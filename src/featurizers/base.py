@@ -3,6 +3,7 @@ import torch
 import h5py
 import typing as T
 import numpy as np
+import multiprocessing as mp
 
 from tqdm import tqdm
 from pathlib import Path
@@ -71,7 +72,7 @@ class Featurizer:
     def transform(self, seq: str) -> torch.Tensor:
         with torch.set_grad_enabled(False):
             feats = self._transform(seq)
-            if self._on_cuda:
+            if feats is not None and self._on_cuda:
                 feats = feats.to(self.device)
             return feats
 
@@ -120,6 +121,16 @@ class Featurizer:
         self._on_cuda = False
         return self
 
+    def embedding(self, seq:str):
+        features = {}
+        seq_h5 = sanitize_string(seq)
+        feats = self.transform(seq)
+        if feats is None:
+            return features
+        features[seq_h5] = feats.cpu().numpy()
+        return features
+
+
     def write_to_disk(
         self, seq_list: T.List[str], verbose: bool = True
     ) -> None:
@@ -131,18 +142,29 @@ class Featurizer:
         logg.info("start to transform features:")
 
         count = 0
+        ctx = mp.get_context("spawn")
+        # torch.multiprocessing.set_start_method('spawn')
+        seqs = seq_list[:1000000]
+        feats_list = []
+        with ctx.Pool(12) as pool:
+            for feat in tqdm(pool.imap(self.embedding, seqs), total=len(seqs), disable=not verbose, desc=self.name):
+                feats_list.extend([feat])
+        for feat in feats_list:
+            features.update(feat)
+        # torch.multiprocessing.set_start_method('fork')
+        # for feat in process_map(
+        #    self.embedding,
+        #    seq_list[:1000000],
+        #    max_worker=8,
+        #    disable=not verbose,
+        #    desc=self.name):
+        #    features = features | feat
 
-        for seq in tqdm(seq_list, disable=not verbose, desc=self.name):
-            seq_h5 = sanitize_string(seq)
-            if seq_h5 in features:
-                logg.warning(f"{seq} already in h5file")
-
-            feats = self.transform(seq)
-            features[seq_h5] = feats.cpu().numpy()
-            count +=1
-            if count > 1000000:
-                break
-         
+        # for seq in tqdm(seq_list, disable=not verbose, desc=self.name):
+        #    pool.map(self.embedding, (seq, features))
+        #    count +=1
+        #    if count > 1000000:
+        #        break
 
         logg.info("start to save features:")
         with h5py.File(self._save_path, "a",libver='latest') as h5fi:
@@ -176,12 +198,15 @@ class Featurizer:
                 for seq in tqdm(seq_list, disable=not verbose, desc=self.name):
                     seq_h5 = sanitize_string(seq)
                     if seq_h5 in group:
-                        
+
                         feats = torch.from_numpy(group[seq_h5][:])
                         #logg.info(f"feats length: {feats.shape}")
                     else:
                         #not found
                         feats = self.transform(seq)
+
+                    if feats is None:
+                        continue
 
                     if self._on_cuda:
                         feats = feats.to(self.device)

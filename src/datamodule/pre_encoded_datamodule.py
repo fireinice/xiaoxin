@@ -1,78 +1,134 @@
+import typing as T
+
 import torch
-import logging
 from omegaconf import OmegaConf
-from pytorch_lightning import LightningDataModule
-from src.data import CSVDataModule, TDCDataModule_Local, get_task_dir
-from src.utils import get_featurizer
+from torch import Tensor
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
+import numpy as np
 
-class PreEncodedDataModule(LightningDataModule):
+from src.featurizers.molecule import ChemBertaFeaturizer
+from src.featurizers.protein import FOLDSEEK_MISSING_IDX, ProtBertFeaturizer
+from src.featurizers import Featurizer
+from src.datamodule.finetune_chembert_datamodule import FineTuneChemBertDataModule
+
+
+class BinaryDataset(Dataset):
+    def __init__(
+        self,
+        drugs,
+        targets,
+        labels,
+        drug_featurizer: Featurizer,
+        target_featurizer: Featurizer,
+    ):
+        self.drugs = drugs
+        self.targets = targets
+        self.labels = labels
+
+        self.drug_featurizer = drug_featurizer
+        self.target_featurizer = target_featurizer
+
+    def __len__(self):
+        return len(self.drugs)
+
+    def __getitem__(self, i: int):
+        drug = self.drug_featurizer(self.drugs.iloc[i])
+        target = self.target_featurizer(self.targets.iloc[i])
+        label = torch.tensor(np.float32(self.labels.iloc[i]))
+        return drug, target, label
+
+
+class PreEncodedDataModule(FineTuneChemBertDataModule):
     def __init__(self, config: OmegaConf) -> None:
-        super().__init__()
-        self.logger = logging.getLogger("lightning.pytorch")
-        self.prepare_data_per_node = False
-        use_cuda = torch.cuda.is_available()
-        device = torch.device("cuda:0" if use_cuda else "cpu")
-        task_dir = get_task_dir(config.task)
-        if len(config.ds) > 0:
-            suffix_task_dir = task_dir.with_suffix(f".{config.ds}")
-            if suffix_task_dir.is_dir():
-                task_dir = suffix_task_dir
-            else:
-                self.logger.warn(f"Cannot find dataset {str(suffix_task_dir)}, fall back to {task_dir}")
-        if config.model_architecture in (
-            "DrugProteinAttention",
-            "DrugProteinMLP",
-            "ChemBertaProteinAttention",
-            "ChemBertaProteinAttention_Local",
-        ):
-            cross_attention = True
-        else:
-            cross_attention = False
-
-        drug_featurizer = get_featurizer(
-            config.drug_featurizer, per_tok=cross_attention, save_dir=task_dir
+        super().__init__(config)
+        self._loader_kwargs = {
+            "batch_size": self.batch_size,
+            "shuffle": self.shuffle,
+            "num_workers": self.num_workers,
+            "collate_fn": self.test_collate_fn,
+            "pin_memory": True,
+        }
+        self.drug_featurizer = ChemBertaFeaturizer(
+            per_tok=self.cross_attention, save_dir=self._task_dir)
+        self.target_featurizer = ProtBertFeaturizer(
+            per_tok=self.cross_attention, save_dir=self._task_dir
         )
-        target_featurizer = get_featurizer(
-            config.target_featurizer, per_tok=cross_attention, save_dir=task_dir
-        )
-
-        if config.model_architecture == "ChemBertaProteinAttention_Local":
-            self.datamodule = TDCDataModule_Local(
-                str(task_dir),
-                drug_featurizer,
-                target_featurizer,
-                device=device,
-                seed=config.replicate,
-                batch_size=config.batch_size,
-                shuffle=config.shuffle,
-                num_workers=config.num_workers,
-                label_column=config.label_column,
-            )
-        else:
-            self.datamodule = CSVDataModule(
-                str(task_dir),
-                drug_featurizer,
-                target_featurizer,
-                device=device,
-                seed=config.replicate,
-                batch_size=config.batch_size,
-                shuffle=config.shuffle,
-                num_workers=config.num_workers,
-                label_column=config.label_column,
-            )
 
     def prepare_data(self):
-        self.datamodule.prepare_data()
+        self.prepare_featurizer(self.target_featurizer, self.all_targets)
+        self.prepare_featurizer(self.drug_featurizer, self.all_drugs)
 
-    def setup(self, stage: str):
-        self.datamodule.setup()
+    def setup(self, stage):
+        self.setup_featurizer(self.target_featurizer, self.all_targets)
+        self.setup_featurizer(self.drug_featurizer, self.all_drugs)
+        dg_name = self._dg_data["name"]
+        self.df_train, self.df_val = self._dg_group.get_train_valid_split(
+            benchmark=dg_name, split_type="random", seed=self._seed
+        )
+
+        if stage == "fit" or stage is None:
+            self.train_data = BinaryDataset(
+                self.df_train[self._drug_column],
+                self.df_train[self._target_column],
+                self.df_train[self._label_column],
+                self.drug_featurizer,
+                self.target_featurizer,
+            )
+            self.val_data = BinaryDataset(
+                self.df_val[self._drug_column],
+                self.df_val[self._target_column],
+                self.df_val[self._label_column],
+                self.drug_featurizer,
+                self.target_featurizer,
+            )
+            self.test_data = BinaryDataset(
+                self.df_test[self._drug_column],
+                self.df_test[self._target_column],
+                self.df_test[self._label_column],
+                self.drug_featurizer,
+                self.target_featurizer,
+            )
+
+        if stage == "test" or stage is None:
+            self.test_data = BinaryDataset(
+                self.df_test[self._drug_column],
+                self.df_test[self._target_column],
+                self.df_test[self._label_column],
+                self.drug_featurizer,
+                self.target_featurizer,
+            )
+
+    def test_collate_fn(self, args: T.Tuple[Tensor, Tensor, Tensor]):
+        """
+        Collate function for PyTorch data loader -- turn a batch of triplets into a triplet of batches
+
+        If target embeddings are not all the same length, it will zero pad them
+        This is to account for differences in length from FoldSeek embeddings
+
+        :param args: Batch of training samples with molecule, protein, and affinity
+        :type args: Iterable[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
+        :return: Create a batch of examples
+        :rtype: T.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        """
+        d_emb = [a[0] for a in args]
+        t_emb = [a[1] for a in args]
+        labs = [a[2] for a in args]
+        drugs = pad_sequence(
+            d_emb, batch_first=True, padding_value=FOLDSEEK_MISSING_IDX
+        )
+        targets = pad_sequence(
+            t_emb, batch_first=True, padding_value=FOLDSEEK_MISSING_IDX
+        )
+        labels = torch.stack(labs, 0)
+        return drugs, targets, labels
 
     def train_dataloader(self):
-        return self.datamodule.train_dataloader()
+        return DataLoader(self.train_data, **self._loader_kwargs, drop_last=True)
 
     def val_dataloader(self):
-        return self.datamodule.test_dataloader()
-        return self.datamodule.val_dataloader()
+        return DataLoader(self.test_data, **self._loader_kwargs, drop_last=True)
+        return DataLoader(self.val_data, **self._loader_kwargs, drop_last=True)
 
     def test_dataloader(self):
-        return self.datamodule.test_dataloader()
+        return DataLoader(self.test_data, **self._loader_kwargs, drop_last=True)

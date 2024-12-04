@@ -1,15 +1,15 @@
-task: bindingdb_multi_class
+task: bindingdb_multi_class_half
 contrastive_split: within
 drug_featurizer: MorganFeaturizer
 target_featurizer: ProtBertFeaturizer
-model_architecture: DrugProteinAttention
+model_architecture: MorganAttention
 latent_dimension: 1024
 latent_distance: "Cosine"
-num_classes: 7
-batch_size: 512
+num_classes: 24
+batch_size: 128
 contrastive_batch_size: 256
 shuffle: True
-num_workers: 32
+num_workers: 8
 
 loss_type: "OR"
 epochs: 50
@@ -26,8 +26,9 @@ margin_t0: 10
 replicate: 0
 device: 0
 verbosity: 3
-
+classify : True
 wandb_proj: NoSigmoidTest
 wandb_save: True
 log_file: ./logs/scratch_testing.log
 model_save_dir: ./best_models
+bins: [0, 50, 100, 150, 200, 270.0, 360.0, 500.0, 600.0, 816.0, 1100.0, 1600.0, 2320.0, 3364.0, 5001.0, 6900.0, 10001.0, 10005.0, 13623.0, 20001.0, 30001.0, 50000.0, 95060.0, 133000.0]

@@ -26,6 +26,8 @@ from pathlib import Path
 import typing as T
 import pandas as pd
 import numpy as np
+import multiprocessing as mp
+from tqdm import tqdm
 
 logg = get_logger()
 
@@ -55,7 +57,7 @@ def get_task_dir(task_name: str):
         "bindingdb_v2": "./dataset/BingdingDB_v2",
         "bindingdb_multi_class": "./dataset/BindingDB_multi_class",
         "bindingdb_multi_class_small": "./dataset/BindingDB_multi_class_small",
-        "pcctomuilt": "./dataset/pcctomuilt"
+        "bindingdb_multi_class_half": "./dataset/BindingDB_multi_class_half",
     }
 
     return Path(task_paths[task_name.lower()]).resolve()
@@ -672,16 +674,19 @@ def filter_max_segment(group):
     max_category = max_categories[0]
     return group[group['Y'] == max_category]
 
-def subsection(df,bins):
+def subsection(df, bins: list, is_train_val: bool):
     df['Combine'] = df['Drug'] + '_' + df['Target']
     bins.append(float(np.inf))
     labels = list(range(len(bins) - 1))
     df['Y'] = pd.cut(df['Y'], bins=bins, labels=labels, right=False)
-    if all(df.groupby('Combine')['Y'].nunique() == 1):
-        print("所有组合已在单一段，无需筛选。")
+    if is_train_val:
+        if all(df.groupby('Combine')['Y'].nunique() == 1):
+            print("所有组合已在单一段，无需筛选。")
+        else:
+            df = df.groupby('Combine', group_keys=False).apply(filter_max_segment)
+            print("筛选完成。")
     else:
-        df = df.groupby('Combine', group_keys=False).apply(filter_max_segment)
-        print("筛选完成。")
+        print("不需要筛选")
     df = df.drop(columns='Combine')
     bins.pop()
     return df
@@ -781,11 +786,12 @@ class TDCDataModule(pl.LightningDataModule):
             benchmark=dg_name, split_type="random", seed=self._seed
         )
         self.df_test = dg_benchmark["test"]
-
         self._dataframes = [self.df_train, self.df_val, self.df_test]
 
         if self._classify:
-            self._dataframes = [subsection(i,bins=self._bins) for i in self._dataframes]
+            self.df_train = subsection(self.df_train,self._bins,True)
+            self.df_val = subsection(self.df_val, self._bins, True)
+            self.df_test = subsection(self.df_test, self._bins, False)
         else:
             self._dataframes = [regression(i) for i in self._dataframes]
 
@@ -900,8 +906,8 @@ class CSVDataModule(TDCDataModule):
         self.test_data.dropna(subset=["Drug", "Target", self.label_column], inplace=True)
 
         if self._classify:
-            self.train_val_data = subsection(self.train_val_data,self._bins)
-            self.test_data = subsection(self.test_data,self._bins)
+            self.train_val_data = subsection(self.train_val_data,self._bins,True)
+            self.test_data = subsection(self.test_data,self._bins,False)
         else:
             self.train_val_data = regression(self.train_val_data)
             self.test_data = regression(self.test_data)

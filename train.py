@@ -42,11 +42,9 @@ def init_config() -> OmegaConf:
     config = OmegaConf.load(args.config)
     arg_overrides = {k: v for k, v in vars(args).items() if v is not None}
     config.update(arg_overrides)
-    if config.label_column == 'Y':
-        config.classify = True
-        config.watch_metric = "val/pcc"
+    if  config.classify:
+        config.watch_metric = "val/F1Score_Average"
     else:
-        config.classify = False
         config.watch_metric = "val/pcc"
     if config.dev:
         config.ds = 'test'
@@ -73,6 +71,7 @@ if __name__ == "__main__":
             num_classes=config.num_classes,
             loss_type=config.loss_type
         )
+        # model = MorganAttention.load_from_checkpoint(config.checkpoint_path)
         dm = BaselineDataModule(config)
     if config.model_architecture == "MorganChembertAttention":
         model = MorganChembertAttention(
@@ -92,5 +91,6 @@ if __name__ == "__main__":
         else:
             dm = PreEncodedDataModule(config)
     strategy = strategies.DDPStrategy(find_unused_parameters=True)
-    trainer = Trainer(strategy=strategy, accelerator="gpu", devices='auto', fast_dev_run=config.dev)
+    trainer = Trainer(strategy=strategy, accelerator="gpu", devices='auto', fast_dev_run=False)
     trainer.fit(model, datamodule=dm)
+    # trainer.validate(model, datamodule=dm)

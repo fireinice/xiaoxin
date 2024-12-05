@@ -1173,9 +1173,6 @@ class TDCDataModule_Double(TDCDataModule):
         if not self.drug_featurizer_two.path.exists():
             self.drug_featurizer_two.write_to_disk(self.all_drugs)
 
-        if not self.target_featurizer.path.exists():
-            self.target_featurizer.write_to_disk(self.all_targets)
-
         self.drug_featurizer_two.cpu()
 
     def setup(self, stage: T.Optional[str] = None):

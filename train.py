@@ -91,6 +91,6 @@ if __name__ == "__main__":
         else:
             dm = PreEncodedDataModule(config)
     strategy = strategies.DDPStrategy(find_unused_parameters=True)
-    trainer = Trainer(strategy=strategy, accelerator="gpu", devices='auto', fast_dev_run=False)
+    trainer = Trainer(strategy=strategy, accelerator="gpu", devices='auto', fast_dev_run=config.dev)
     trainer.fit(model, datamodule=dm)
     # trainer.validate(model, datamodule=dm)

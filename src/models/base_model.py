@@ -38,33 +38,42 @@ class BaseModelModule(pl.LightningModule):
             }
         else:
             if self.loss_type == "OR":
-                self.loss_fct = self.ordinal_regression_loss
+                self.loss_fct = self.map_ordinal_regression_loss
             else:
                 self.loss_fct = torch.nn.CrossEntropyLoss()
             self.metrics = {
-                "class_accuracy": torchmetrics.classification.MulticlassAccuracy(
-                    num_classes=self.num_classes, average=None
-                ),
-                "class_recall": torchmetrics.classification.MulticlassRecall(
-                    num_classes=self.num_classes, average=None
-                ),
-                "aupr": torchmetrics.classification.MulticlassAveragePrecision(
-                    num_classes=self.num_classes
-                ),
-                "ConfusionMatrix": torchmetrics.ConfusionMatrix(
-                    task="multiclass", num_classes=self.num_classes
-                ),
-            }
+                "class_accuracy": torchmetrics.classification.MulticlassAccuracy(num_classes=self.num_classes,average=None),
+                "class_recall": torchmetrics.classification.MulticlassRecall(num_classes=self.num_classes, average=None),
+                "class_precision":torchmetrics.classification.MulticlassPrecision(num_classes=self.num_classes,average=None),
+                "F1Score": torchmetrics.classification.MulticlassF1Score(num_classes=self.num_classes,average=None),
+                "F1Score_Average": torchmetrics.classification.MulticlassF1Score(num_classes=self.num_classes, average='weighted'),
+                "ConfusionMatrix":torchmetrics.ConfusionMatrix(task="multiclass", num_classes=self.num_classes),
+                }
+
         # https://github.com/Lightning-AI/torchmetrics/issues/531
         self.metrics = torch.nn.ModuleDict(self.metrics)
 
-    def ordinal_regression_loss(self, y_pred, y_target):
+    def ordinal_regression_loss(self, y_pred, y_target,factor=1):
         num_thresholds = y_pred.size(1)
         y_true_expanded = y_target.unsqueeze(1).repeat(1, num_thresholds)
-        mask = (
-            torch.arange(num_thresholds).to(y_pred.device).unsqueeze(0)
-            < y_true_expanded
-        ).float()
+        mask = (torch.arange(num_thresholds).to(y_pred.device).unsqueeze(0) < y_true_expanded).float()
+        loss = torch.nn.BCELoss()(y_pred, mask)
+        return loss
+
+    def diff_ordinal_regression_loss(self, y_pred, y_target,factor=1):
+        num_thresholds = y_pred.size(1)
+        y_true_expanded = y_target.unsqueeze(1).repeat(1, num_thresholds)
+        mask = (torch.arange(num_thresholds).to(y_pred.device).unsqueeze(0) < y_true_expanded).float()
+        loss = torch.nn.BCELoss(reduction='none')(y_pred, mask)
+        rank_diff = torch.abs(torch.arange(num_thresholds).to(y_pred.device).unsqueeze(0) - y_true_expanded)
+        weight = (1 - mask) * (factor * rank_diff.float()) + mask
+        weighted_loss = (loss * weight).mean()
+        return weighted_loss
+
+    def map_ordinal_regression_loss(self, y_pred, y_target):
+        num_thresholds = y_pred.size(1)
+        y_true_expanded = (y_target*10).unsqueeze(1).repeat(1, num_thresholds)
+        mask = (torch.arange(num_thresholds).to(y_pred.device).unsqueeze(0) < y_true_expanded).float()
         loss = torch.nn.BCELoss()(y_pred, mask)
         return loss
 
@@ -80,5 +89,5 @@ class BaseModelModule(pl.LightningModule):
     def validation_step(self, train_batch, batch_idx):
         raise NotImplementedError()
 
-    def validation_step_end(self, outputs):
+    def on_validation_epoch_end(self):
         raise NotImplementedError()

@@ -16,6 +16,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch import nn,einsum
 import math
 from transformers import AutoTokenizer, AutoModel, pipeline
+import torch.nn.functional as F
 
 
 logg = get_logger()
@@ -214,7 +215,6 @@ class SimpleCoembeddingSigmoid(nn.Module):
         sigmoid_f = torch.nn.Sigmoid()
         return sigmoid_f(distance).squeeze()
 
-
 class SimpleCoembedding_FoldSeek(nn.Module):
     def __init__(
         self,
@@ -314,7 +314,6 @@ class SimpleCoembedding_FoldSeek(nn.Module):
 
         distance = self.activator(drug_projection, target_projection)
         return distance.squeeze()
-
 
 class SimpleCoembedding_FoldSeekX(nn.Module):
     def __init__(
@@ -543,7 +542,6 @@ class AffinityCoembedInner(nn.Module):
         ).squeeze()
         return y
 
-
 class CosineBatchNorm(nn.Module):
     def __init__(
         self,
@@ -578,7 +576,6 @@ class CosineBatchNorm(nn.Module):
         prot_proj = self.prot_norm(self.prot_projector(prot_emb))
 
         return self.activator(mol_proj, prot_proj)
-
 
 class LSTMCosine(nn.Module):
     def __init__(
@@ -621,7 +618,6 @@ class LSTMCosine(nn.Module):
 
         return self.activator(mol_proj, prot_proj)
 
-
 class DeepCosine(nn.Module):
     def __init__(
         self,
@@ -656,7 +652,6 @@ class DeepCosine(nn.Module):
 
         return self.activator(mol_proj, prot_proj)
 
-
 class SimpleConcat(nn.Module):
     def __init__(
         self,
@@ -681,7 +676,6 @@ class SimpleConcat(nn.Module):
     def forward(self, mol_emb, prot_emb):
         cat_emb = torch.cat([mol_emb, prot_emb], axis=1)
         return self.fc3(self.fc2(self.fc1(cat_emb))).squeeze()
-
 
 class SeparateConcat(nn.Module):
     def __init__(
@@ -711,7 +705,6 @@ class SeparateConcat(nn.Module):
         prot_proj = self.prot_projector(prot_emb)
         cat_emb = torch.cat([mol_proj, prot_proj], axis=1)
         return self.fc(cat_emb).squeeze()
-
 
 class AffinityEmbedConcat(nn.Module):
     def __init__(
@@ -774,8 +767,6 @@ class MLP(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
 
         return self.mlp(inputs)
-
-
 
 def FeedForward(dim : int, mult : int= 4):
     inner_dim = int(dim * mult)
@@ -915,7 +906,6 @@ class PerceiverResampler(nn.Module):
         latents = self.norm(latents)
         return latents
 
-
 class BertPooler(nn.Module):
     def __init__(self, hidden_size):
         super().__init__()
@@ -1027,12 +1017,19 @@ class DrugProteinAttention(nn.Module):
                  nn.Sigmoid(),
             )
             else:
-
                 if self.loss_type == 'OR':
-                    self.predict_layer = nn.Sequential(
-                    nn.Linear(256, self.num_classes-1, bias=True),
-                    nn.Sigmoid()
-                    )
+                    # self.predict_layer = nn.Sequential(
+                    # nn.Linear(256, self.num_classes-1, bias=True),
+                    # nn.Sigmoid()
+                    # )
+                    self.predict_layer = nn.ModuleList([
+                        nn.Sequential(
+                            nn.Linear(256, 1, bias=True),
+                            nn.Dropout(0.1),
+                            nn.Sigmoid(),
+                        )
+                        for _ in range(self.num_classes-1)
+                    ])
                 else:
                     self.predict_layer = nn.Sequential(
                     nn.Linear(256, num_classes, bias=True),
@@ -1078,7 +1075,6 @@ class DrugProteinAttention(nn.Module):
     def ordinal_regression_predict(self, predict):
 
         predict = (predict > 0.5).sum(dim=1)
-
         predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
         return predict
 
@@ -1110,12 +1106,95 @@ class DrugProteinAttention(nn.Module):
         #out_embedding = torch.max(outputs, dim=1)[0]
 
         x = self.mlp(out_embedding)
-        predict = self.predict_layer(x)
+        if self.loss_type=='OR':
+            predict = [classifier(x) for classifier in self.predict_layer]
+            predict = torch.cat(predict, dim=1)
+        else:
+            predict = self.predict_layer(x)
 
         predict = torch.squeeze(predict,dim=-1)
 
         if (is_train==False and self.loss_type=="OR"):
             return self.ordinal_regression_predict(predict) 
+        else:
+            return predict
+
+# 二维的Chember和Morgan作为cls拼接三维的Protbert
+class DrugProteinAttention_Double(DrugProteinAttention):
+    def __init__(
+            self,
+            drug_shape_one=2048,
+            drug_shape_two=384,
+            target_shape=1024,
+            latent_dimension=1024,
+            latent_activation=nn.ReLU,
+            latent_distance="Cosine",
+            classify=True,
+            num_classes=2,
+            loss_type="CE",
+    ):
+        super().__init__(
+            drug_shape =drug_shape_one,
+            target_shape= target_shape,
+            latent_dimension = latent_dimension,
+            latent_activation = latent_activation,
+            latent_distance=latent_distance,
+            classify=classify,
+            num_classes=num_classes*10,
+            loss_type=loss_type
+        )
+
+        self.drug_shape_two = drug_shape_two
+        self.pooler_two = BertPooler(latent_dimension)
+        self.drug_projector_two = nn.Sequential(
+            nn.Linear(self.drug_shape_two, latent_dimension)
+        )
+        self.input_norm_two = nn.LayerNorm(latent_dimension)
+        encoder_layer_two = nn.TransformerEncoderLayer(d_model=latent_dimension, nhead=16, batch_first=True)
+        self.transformer_encoder_two = nn.TransformerEncoder(encoder_layer_two, num_layers=1)
+
+        self.weight_one = nn.Parameter(torch.tensor(0.5, requires_grad=True))
+        self.weight_two = nn.Parameter(torch.tensor(0.5, requires_grad=True))
+
+    def forward(self,
+                drug_one: torch.Tensor,
+                drug_two: torch.Tensor,
+                target: torch.Tensor,
+                is_train=True):
+
+        drug_projection_one = self.drug_projector(drug_one)
+        drug_projection_two = self.drug_projector_two(drug_two)
+        target_projection = target
+
+        drug_projection_one = drug_projection_one.unsqueeze(1)
+        drug_projection_two = drug_projection_two.unsqueeze(1)
+        input_one = torch.concat([drug_projection_one, target_projection], dim=1)
+        input_two = torch.concat([drug_projection_two, target_projection], dim=1)
+
+        input_one = self.input_norm(input_one)
+        input_two = self.input_norm_two(input_two)
+
+        att_mask = self.get_att_mask(target)
+
+        output_one = self.transformer_encoder(input_one, src_key_padding_mask=att_mask)
+        output_two = self.transformer_encoder_two(input_two, src_key_padding_mask=att_mask)
+
+        out_embedding_one = self.pooler(output_one)
+        out_embedding_two = self.pooler_two(output_two)
+
+        # out_embedding = torch.max(outputs, dim=1)[0]
+        # out_embedding = torch.concat([out_embedding_one, out_embedding_two], dim=-1)
+        weights = F.softmax(torch.stack([self.weight_one, self.weight_two]), dim=0)
+        weight_one, weight_two = weights[0], weights[1]
+
+        out_embedding = weight_one * out_embedding_one + weight_two * out_embedding_two
+        x = self.mlp(out_embedding)
+        predict = self.predict_layer(x)
+
+        predict = torch.squeeze(predict, dim=-1)
+
+        if (is_train == False and self.loss_type == "OR"):
+            return self.ordinal_regression_predict(predict)
         else:
             return predict
 
@@ -1228,8 +1307,8 @@ class ChemBertaProteinAttention(nn.Module):
 
     def ordinal_regression_predict(self, predict):
 
-        predict = (predict > 0.5).sum(dim=1)
-        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
+        predict = (predict > 0.5).sum(dim=1) // 10
+        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes//10).to(torch.float32)
         return predict
 
     def forward(self, 
@@ -1285,7 +1364,6 @@ class ChemBertaProteinAttention(nn.Module):
             return self.ordinal_regression_predict(predict) 
         else:
             return predict
-
 
 #三维的Chemberta和三维的Porbert  从本地加载三维的Chembert的特征
 class ChemBertaProteinAttention_Local(nn.Module):

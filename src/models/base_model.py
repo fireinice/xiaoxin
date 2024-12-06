@@ -70,6 +70,12 @@ class BaseModelModule(pl.LightningModule):
         weighted_loss = (loss * weight).mean()
         return weighted_loss
 
+    def ordinal_regression_predict(self, predict):
+
+        predict = (predict > 0.5).sum(dim=1)
+        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
+        return predict
+
     def forward(self, drug, target):
         raise NotImplementedError()
 

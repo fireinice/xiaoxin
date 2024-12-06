@@ -976,7 +976,7 @@ class DrugProteinAttention(nn.Module):
         latent_activation=nn.ReLU,
         latent_distance="Cosine",
         classify=True,
-        num_classes=2,
+        num_classes=52,
         loss_type="CE",
     ):
         super().__init__()
@@ -986,8 +986,6 @@ class DrugProteinAttention(nn.Module):
         self.do_classify = classify  
         self.num_classes=num_classes
         self.loss_type=loss_type
-
-
         self.pooler = BertPooler(latent_dimension) 
 
 
@@ -1018,18 +1016,18 @@ class DrugProteinAttention(nn.Module):
             )
             else:
                 if self.loss_type == 'OR':
-                    # self.predict_layer = nn.Sequential(
-                    # nn.Linear(256, self.num_classes-1, bias=True),
-                    # nn.Sigmoid()
-                    # )
-                    self.predict_layer = nn.ModuleList([
-                        nn.Sequential(
-                            nn.Linear(256, 1, bias=True),
-                            nn.Dropout(0.1),
-                            nn.Sigmoid(),
-                        )
-                        for _ in range(self.num_classes-1)
-                    ])
+                    self.predict_layer = nn.Sequential(
+                    nn.Linear(256, self.num_classes-1, bias=True),
+                    nn.Sigmoid()
+                    )
+                    # self.predict_layer = nn.ModuleList([
+                    #     nn.Sequential(
+                    #         nn.Linear(256, 1, bias=True),
+                    #         nn.Dropout(0.1),
+                    #         nn.Sigmoid(),
+                    #     )
+                    #     for _ in range(self.num_classes-1)
+                    # ])
                 else:
                     self.predict_layer = nn.Sequential(
                     nn.Linear(256, num_classes, bias=True),
@@ -1072,12 +1070,6 @@ class DrugProteinAttention(nn.Module):
         mask = torch.concat([drug_mask, mask],dim=1)
         return mask
 
-    def ordinal_regression_predict(self, predict):
-
-        predict = (predict > 0.5).sum(dim=1)
-        predict = torch.nn.functional.one_hot(predict,num_classes=self.num_classes).to(torch.float32)
-        return predict
-
 
     def forward(self, drug : torch.Tensor, target:torch.Tensor, is_train=True):
 
@@ -1106,18 +1098,15 @@ class DrugProteinAttention(nn.Module):
         #out_embedding = torch.max(outputs, dim=1)[0]
 
         x = self.mlp(out_embedding)
-        if self.loss_type=='OR':
-            predict = [classifier(x) for classifier in self.predict_layer]
-            predict = torch.cat(predict, dim=1)
-        else:
-            predict = self.predict_layer(x)
+        # if self.loss_type=='OR':
+        #     predict = [classifier(x) for classifier in self.predict_layer]
+        #     predict = torch.cat(predict, dim=1)
+        # else:
+        predict = self.predict_layer(x)
 
         predict = torch.squeeze(predict,dim=-1)
 
-        if (is_train==False and self.loss_type=="OR"):
-            return self.ordinal_regression_predict(predict) 
-        else:
-            return predict
+        return predict
 
 # 二维的Chember和Morgan作为cls拼接三维的Protbert
 class DrugProteinAttention_Double(DrugProteinAttention):

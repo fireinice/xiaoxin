@@ -44,19 +44,20 @@ class MorganAttention(BaseModelModule):
 
     def training_step(self, train_batch, batch_idx):
         drug, target, label = train_batch  # target is (D + N_pool)
-        pred = self.forward(drug, target,True)
+        pred = self.forward(drug, target)
         loss = self.loss_fct(pred, label.to(torch.float32))
         self.log("train/loss", loss)
         return loss
 
-
-
     def validation_step(self, train_batch, batch_idx):
-        print(f"Running on GPU {self.global_rank}")  # 确保每个 GPU 都在参与验证
         drug, target, label = train_batch  # target is (D + N_pool)
-        pred = self.forward(drug, target, False)
+        pred = self.forward(drug, target)
         loss = self.loss_fct(pred, label.to(torch.float32))
         self.log("val/loss", loss)
+        if self.loss_type=="OR":
+            pred = self.ordinal_regression_predict(pred)
+        else:
+            pred = pred
         result = {"loss": loss, "preds": pred, "target": label}
         self.validation_step_outputs.append(result)
         return result

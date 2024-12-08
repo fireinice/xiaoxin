@@ -31,8 +31,10 @@ class DGDataModule(LightningDataModule):
         self._data_dir = self._task_dir
         self._drug_column = "Drug"
         self._target_column = "Target"
-        self._label_column=config.label_column
+        self._label_column="Y"
         self._seed = config.replicate
+        self.classify = config.classify
+        self.bins = config.bins
         self.load_data()
 
     def load_data(self):

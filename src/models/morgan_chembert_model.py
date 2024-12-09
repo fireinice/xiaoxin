@@ -1,67 +1,69 @@
-import numpy as np
 import torch
-from .base_model import BaseModelModule
-from src.architectures import DrugProteinAttention_Double
+from torch import nn
+from src.architectures import BertPooler
+from src.models.morgan_model import MorganAttention
+import torch.nn.functional as F
+import logging
+import time
+log_filename = f"log_MorganChembert.txt"
+logging.basicConfig(filename=log_filename, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-class MorganChembertAttention(BaseModelModule):
+
+class MorganChembertAttention(MorganAttention):
     def __init__(
         self,
-        drug_dim=384,
+        drug_dim=2048,
+        drug_dim_two=384,
         target_dim=1024,
         latent_dim=1024,
         classify=True,
         num_classes=2,
         loss_type="CE",
         lr=1e-4,
+        Ensemble_Learn = False,
         lr_t0=10,
     ):
         super().__init__(
-            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr
+            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr , Ensemble_Learn,lr_t0
         )
-        self.model = DrugProteinAttention_Double(
-            latent_dimension=latent_dim,
-            classify=classify,
-            num_classes=num_classes,
-            loss_type=loss_type,
+        self.drug_shape_two = drug_dim_two
+        self.pooler_two = BertPooler(self.latent_dimension)
+        self.drug_projector_two = nn.Sequential(
+            nn.Linear(self.drug_shape_two, self.latent_dimension)
         )
-        self.lr_t0 = lr_t0
-        self.validation_step_outputs = []
+        self.input_norm_two = nn.LayerNorm(self.latent_dimension)
+        encoder_layer_two = nn.TransformerEncoderLayer(d_model=self.latent_dimension, nhead=16, batch_first=True)
+        self.transformer_encoder_two = nn.TransformerEncoder(encoder_layer_two, num_layers=1)
 
-    def forward(self, drug, target,is_train=True):
-        return self.model(drug['drugs_one'], drug['drugs_two'], target,is_train=is_train)
+        self.weight_one = nn.Parameter(torch.tensor(0.5, requires_grad=True))
+        self.weight_two = nn.Parameter(torch.tensor(0.5, requires_grad=True))
 
-    def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=self.lr_t0
-        )
-        return [optimizer], [{"scheduler": lr_scheduler, "interval": "epoch"}]
+    def forward(self,
+                drug: torch.Tensor,
+                target: torch.Tensor,):
 
-    def training_step(self, train_batch, batch_idx):
-        drug, target, label = train_batch  # target is (D + N_pool)
-        pred = self.forward(drug, target,True)
-        loss = self.loss_fct(pred, label.to(torch.float32))
-        self.log("train/loss", loss)
-        return loss
+        drug_projection_one = self.drug_projector(drug['drugs_one'])
+        drug_projection_two = self.drug_projector_two(drug['drugs_two'])
+        target_projection = target
 
-    def validation_step(self, train_batch, batch_idx):
-        drug, target, label = train_batch  # target is (D + N_pool)
-        pred = self.forward(drug, target,False)
-        loss = self.loss_fct(pred, label.to(torch.float32))
-        self.log("val/loss", loss)
-        result = {"loss": loss, "preds": pred, "target": label}
-        self.validation_step_outputs.append(result)
-        return result
+        drug_projection_one = drug_projection_one.unsqueeze(1)
+        drug_projection_two = drug_projection_two.unsqueeze(1)
+        input_one = torch.concat([drug_projection_one, target_projection], dim=1)
+        input_two = torch.concat([drug_projection_two, target_projection], dim=1)
 
-    def on_validation_epoch_end(self):
-        avg_loss = torch.stack([x["loss"] for x in self.validation_step_outputs]).mean()
-        preds = torch.concat([x["preds"] for x in self.validation_step_outputs])
-        target = torch.concat([x["target"] for x in self.validation_step_outputs])
-        self.print(f"*****Epoch {self.current_epoch}*****")
-        self.print(f"loss:{avg_loss}")
-        for name, metric in self.metrics.items():
-            value = metric(preds, target)
-            if np.isscalar(value):
-                self.log(f"val/{name}", value)
-            self.print(f"val/{name}: {value}")
-        self.validation_step_outputs.clear()
+        input_one = self.input_norm(input_one)
+        input_two = self.input_norm_two(input_two)
+
+        att_mask = self.get_att_mask(target)
+
+        output_one = self.transformer_encoder(input_one, src_key_padding_mask=att_mask)
+        output_two = self.transformer_encoder_two(input_two, src_key_padding_mask=att_mask)
+
+        out_embedding_one = self.pooler(output_one)
+        out_embedding_two = self.pooler_two(output_two)
+
+        weights = F.softmax(torch.stack([self.weight_one, self.weight_two]), dim=0)
+        weight_one, weight_two = weights[0], weights[1]
+
+        out_embedding = weight_one * out_embedding_one + weight_two * out_embedding_two
+        return self.classifier_forward(out_embedding)

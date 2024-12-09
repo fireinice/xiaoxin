@@ -19,6 +19,7 @@ from omegaconf import OmegaConf
 from src.models.drug_target_attention import DrugTargetAttention
 from src.datamodule.pre_encoded_datamodule import PreEncodedDataModule
 from src.datamodule.finetune_chembert_datamodule import FineTuneChemBertDataModule
+from src.datamodule.morgan_chembert_datamodule import MorganChembertDataModule
 
 
 def init_config() -> OmegaConf:
@@ -66,10 +67,12 @@ if __name__ == "__main__":
         dm = BaselineDataModule(config)
     if config.model_architecture == "MorganAttention":
         model = MorganAttention(
+            drug_dim=config.drug_shape,
             latent_dim=config.latent_dimension,
             classify=config.classify,
             num_classes=config.num_classes,
-            loss_type=config.loss_type
+            loss_type=config.loss_type,
+            Ensemble_Learn=False,
         )
         # model = MorganAttention.load_from_checkpoint(config.checkpoint_path)
         dm = BaselineDataModule(config)
@@ -78,7 +81,8 @@ if __name__ == "__main__":
             latent_dim=config.latent_dimension,
             classify=config.classify,
             num_classes=config.num_classes,
-            loss_type=config.loss_type
+            loss_type=config.loss_type,
+            Ensemble_Learn=False,
         )
         dm = MorganChembertDataModule(config)
     if config.model_architecture == "DrugTargetAttention":

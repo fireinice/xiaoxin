@@ -94,41 +94,31 @@ class BaselineDataModule(DGDataModule):
         )
         self.weights = None
 
-    def calculate_weights(self, label_dict, dataset):
-        arr = []
-        for label, count in label_dict.items():
-            weight = len(dataset) / count
-            arr.append(weight)
-        return arr
-
     def prepare_data(self):
         self.prepare_featurizer(self.target_featurizer, self.all_targets)
         self.prepare_featurizer(self.drug_featurizer, self.all_drugs)
 
-    def setup(self, stage: str):
-        self.setup_featurizer(self.target_featurizer, self.all_targets)
-        self.setup_featurizer(self.drug_featurizer, self.all_drugs)
+    def process_data(self):
         dg_name = self._dg_data["name"]
         self.df_train, self.df_val = self._dg_group.get_train_valid_split(
             benchmark=dg_name, split_type="random", seed=self._seed
         )
 
         if self.classify:
-            self.df_train = subsection(self.df_train, self.bins, True,'train',self._data_dir)
-            self.df_val = subsection(self.df_val, self.bins, True,'val',self._data_dir)
-            self.df_test = subsection(self.df_test, self.bins, False,'test',self._data_dir)
+            self.df_train = subsection(self.df_train, self.bins, True, 'train', self._data_dir)
+            self.df_val = subsection(self.df_val, self.bins, True, 'val', self._data_dir)
+            self.df_test = subsection(self.df_test, self.bins, False, 'test', self._data_dir)
         else:
-            self.df_train = regression(self.df_train, 'train',self._data_dir)
-            self.df_val = regression(self.df_val, 'val',self._data_dir)
-            self.df_test = regression(self.df_test, 'test',self._data_dir)
+            self.df_train = regression(self.df_train, 'train', self._data_dir)
+            self.df_val = regression(self.df_val, 'val', self._data_dir)
+            self.df_test = regression(self.df_test, 'test', self._data_dir)
 
-        label_counts = self.df_train[self._label_column].value_counts().to_dict()
-        weights = self.calculate_weights(label_counts, self.df_train)
-        self._weights = torch.DoubleTensor(weights)
 
-        self.sampler = WeightedRandomSampler(
-            self._weights, len(self.df_train), replacement=True
-        )
+    def setup(self, stage: str):
+        self.setup_featurizer(self.target_featurizer, self.all_targets)
+        self.setup_featurizer(self.drug_featurizer, self.all_drugs)
+        self.process_data()
+        self.sampler = self.build_weighted_sampler(self.df_train,self._label_column)
 
         if stage == "fit" or stage is None:
             self.train_data = BinaryDataset(
@@ -186,20 +176,22 @@ class BaselineDataModule(DGDataModule):
         return DataLoader(
             self.train_data,
             batch_size=self.batch_size,
+            # shuffle=self.shuffle,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
-            pin_memory=True,
             drop_last=True,
+            pin_memory=True,
             sampler=self.sampler
         )
 
     def val_dataloader(self):
         return DataLoader(
-            self.val_data,
+            self.test_data,
             batch_size=self.batch_size,
             shuffle=self.shuffle,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
+            drop_last=True,
             pin_memory=True
         )
 
@@ -210,5 +202,6 @@ class BaselineDataModule(DGDataModule):
             shuffle=self.shuffle,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
+            drop_last=True,
             pin_memory=True
         )

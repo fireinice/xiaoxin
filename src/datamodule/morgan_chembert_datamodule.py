@@ -2,7 +2,6 @@ import torch
 import logging
 
 from omegaconf import OmegaConf
-
 import typing as T
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
@@ -11,8 +10,6 @@ from torch.utils.data.sampler import WeightedRandomSampler
 from src.datamodule.baseline_datamodule import subsection, regression, BaselineDataModule
 from src.featurizers import Featurizer
 from src.featurizers.protein import FOLDSEEK_MISSING_IDX
-from src.utils import get_featurizer, logg
-from src.datamodule.dg_datamodule import DGDataModule
 from src.datamodule.pre_encoded_datamodule import BinaryDataset
 
 class BinaryDataset_Double(BinaryDataset):
@@ -50,6 +47,7 @@ class MorganChembertDataModule(BaselineDataModule):
 
         self.drug_featurizer_two = self.drug_featurizer[1]
         self.drug_featurizer = self.drug_featurizer[0]
+
     def prepare_data(self):
         super(MorganChembertDataModule, self).prepare_data()
         self.prepare_featurizer(self.drug_featurizer_two,self.all_drugs)
@@ -58,27 +56,8 @@ class MorganChembertDataModule(BaselineDataModule):
         self.setup_featurizer(self.target_featurizer, self.all_targets)
         self.setup_featurizer(self.drug_featurizer, self.all_drugs)
         self.setup_featurizer(self.drug_featurizer_two,self.all_drugs)
-        dg_name = self._dg_data["name"]
-        self.df_train, self.df_val = self._dg_group.get_train_valid_split(
-            benchmark=dg_name, split_type="random", seed=self._seed
-        )
-
-        if self.classify:
-            self.df_train = subsection(self.df_train, self.bins, True,'train',self._data_dir)
-            self.df_val = subsection(self.df_val, self.bins, True,'val',self._data_dir)
-            self.df_test = subsection(self.df_test, self.bins, False,'test',self._data_dir)
-        else:
-            self.df_train = regression(self.df_train, 'train',self._data_dir)
-            self.df_val = regression(self.df_val, 'val',self._data_dir)
-            self.df_test = regression(self.df_test, 'test',self._data_dir)
-
-        label_counts = self.df_train[self._label_column].value_counts().to_dict()
-        weights = self.calculate_weights(label_counts, self.df_train)
-        self._weights = torch.DoubleTensor(weights)
-
-        self.sampler = WeightedRandomSampler(
-            self._weights, len(self.df_train), replacement=True
-        )
+        self.process_data()
+        self.sampler = self.build_weighted_sampler(self.df_train,self._label_column)
 
         if stage == "fit" or stage is None:
             self.train_data = BinaryDataset_Double(
@@ -99,7 +78,6 @@ class MorganChembertDataModule(BaselineDataModule):
                 self.target_featurizer,
             )
 
-        if stage == "test" or stage is None:
             self.test_data = BinaryDataset_Double(
                 self.df_test[self._drug_column],
                 self.df_test[self._target_column],
@@ -117,12 +95,6 @@ class MorganChembertDataModule(BaselineDataModule):
                 self.drug_featurizer_two,
                 self.target_featurizer,)
 
-    def calculate_weights(self, label_dict, dataset):
-        arr = []
-        for label, count in label_dict.items():
-            weight = len(dataset) / count
-            arr.append(weight)
-        return arr
 
     def _collate_fn(
         self,args: T.Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
@@ -151,22 +123,24 @@ class MorganChembertDataModule(BaselineDataModule):
     def train_dataloader(self):
         return DataLoader(
             self.train_data,
+            shuffle=self.shuffle,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
             pin_memory=True,
             drop_last=True,
-            sampler=self.sampler
+            # sampler=self.sampler
         )
 
     def val_dataloader(self):
         return DataLoader(
-            self.val_data,
+            self.test_data,
             batch_size=self.batch_size,
             shuffle=self.shuffle,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
-            pin_memory=True
+            pin_memory=True,
+            drop_last=True
         )
 
     def test_dataloader(self):
@@ -176,7 +150,8 @@ class MorganChembertDataModule(BaselineDataModule):
             shuffle=self.shuffle,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
-            pin_memory=True
+            pin_memory=True,
+            drop_last=True
         )
 
 

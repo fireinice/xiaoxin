@@ -17,7 +17,7 @@ class MorganAttention(BaseModelModule):
         target_dim=1024,
         latent_dim=1024,
         classify=True,
-        num_classes=24,
+        num_classes=2,
         loss_type="CLM",
         lr=1e-4,
         Ensemble_Learn=False,
@@ -108,6 +108,20 @@ class MorganAttention(BaseModelModule):
         mask = torch.concat([drug_mask, mask], dim=1)
         return mask
 
+    def classifier_forward(self, out_embedding ):
+        x = self.mlp(out_embedding)
+        if self.loss_type == 'OR' and self.Ensemble_Learn:
+            predict = [classifier(x) for classifier in self.predict_layer]
+            predict = torch.cat(predict, dim=1)
+        elif self.loss_type == 'CLM':
+            predict = self.predict_layer(x)
+            predict = self.link(predict)
+        else:
+            predict = self.predict_layer(x)
+
+        predict = torch.squeeze(predict, dim=-1)
+        return predict
+
     def forward(self, drug: torch.Tensor, target: torch.Tensor):
 
         b, d = drug.shape
@@ -127,19 +141,7 @@ class MorganAttention(BaseModelModule):
 
         outputs = self.transformer_encoder(inputs, src_key_padding_mask=att_mask)
         out_embedding = self.pooler(outputs)
-
-        x = self.mlp(out_embedding)
-        if self.loss_type == 'OR' and self.Ensemble_Learn:
-            predict = [classifier(x) for classifier in self.predict_layer]
-            predict = torch.cat(predict, dim=1)
-        elif self.loss_type == 'CLM':
-            predict = self.predict_layer(x)
-            predict = self.link(predict)
-        else:
-            predict = self.predict_layer(x)
-
-        predict = torch.squeeze(predict, dim=-1)
-        return predict
+        return self.classifier_forward(out_embedding)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)

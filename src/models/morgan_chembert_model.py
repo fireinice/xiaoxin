@@ -66,15 +66,4 @@ class MorganChembertAttention(MorganAttention):
         weight_one, weight_two = weights[0], weights[1]
 
         out_embedding = weight_one * out_embedding_one + weight_two * out_embedding_two
-        x = self.mlp(out_embedding)
-        if self.loss_type == 'OR' and self.Ensemble_Learn:
-            predict = [classifier(x) for classifier in self.predict_layer]
-            predict = torch.cat(predict, dim=1)
-        elif self.loss_type == 'CLM':
-            predict = self.predict_layer(x)
-            predict = self.link(predict)
-        else:
-            predict = self.predict_layer(x)
-
-        predict = torch.squeeze(predict, dim=-1)
-        return predict
+        return self.classifier_forward(out_embedding)

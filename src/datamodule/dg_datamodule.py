@@ -5,9 +5,9 @@ from omegaconf import OmegaConf
 import pandas as pd
 from pytorch_lightning import LightningDataModule
 from tdc.benchmark_group import dti_dg_group
+from torch.utils.data import WeightedRandomSampler
 
 from src.data import get_task_dir
-
 
 class DGDataModule(LightningDataModule):
     def __init__(self, config: OmegaConf) -> None:
@@ -55,6 +55,27 @@ class DGDataModule(LightningDataModule):
             featurizer.cuda(self._device)
         featurizer.write_to_disk(all_items)
         featurizer.cpu()
+
+    def calculate_weights(self, label_dict, dataset,lable_column):
+        class_weights = {}
+        total_samples = len(dataset)
+        for label, count in label_dict.items():
+            if count == 0:
+                weight = 0
+            else:
+                weight = total_samples / count
+            class_weights[label] = weight
+        arr = []
+        for index, row in dataset.iterrows():
+            weight = class_weights[row[lable_column]]
+            arr.append(weight)
+        return arr
+
+    def build_weighted_sampler(self, dataset, lable_column):
+        label_dict = dataset[lable_column].value_counts().to_dict()
+        weights = self.calculate_weights(label_dict, dataset,lable_column)
+        weights = torch.DoubleTensor(weights)
+        return WeightedRandomSampler(weights, len(dataset), replacement=True)
 
     @property
     def all_targets(self):

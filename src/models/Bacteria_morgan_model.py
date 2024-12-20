@@ -1,3 +1,4 @@
+import pandas as pd
 import torch
 from torch import nn
 from src.architectures import BertPooler
@@ -54,6 +55,19 @@ class BacteriaMorganAttention(MorganAttention):
         )
         drug_output = drug_output.squeeze(dim=1)
         return self.classifier_forward(drug_output)
+
+    def predict_step(self, batch, batch_idx):
+        drug, target , ids= batch
+        pred = self.forward(drug,target)
+        if self.loss_type=="OR":
+            pred = self.ordinal_regression_predict(pred)
+        elif self.loss_type=='CLM':
+            pred = self.clm_predict(pred)
+        else:
+            pred = pred
+        result = {'ID': ids, 'pred': pred}
+        self.predict_step_outputs.append(result)
+        return result
 
 
 

@@ -1,3 +1,4 @@
+import pandas as pd
 import torch
 from torch import nn
 from src.architectures import BertPooler
@@ -67,3 +68,16 @@ class MorganChembertAttention(MorganAttention):
 
         out_embedding = weight_one * out_embedding_one + weight_two * out_embedding_two
         return self.classifier_forward(out_embedding)
+
+    def predict_step(self, batch, batch_idx):
+        drug, target ,index = batch
+        pred = self.forward(drug,target)
+        if self.loss_type=="OR":
+            pred = self.ordinal_regression_predict(pred)
+        elif self.loss_type=='CLM':
+            pred = self.clm_predict(pred)
+        else:
+            pred = pred
+        result = {'ID':index,'pred': pred}
+        self.predict_step_outputs.append(result)
+        return result

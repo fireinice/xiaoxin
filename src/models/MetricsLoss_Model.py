@@ -53,6 +53,7 @@ class MetricsLossCallback(Callback):
                 "ConfusionMatrix": torchmetrics.ConfusionMatrix(task="multiclass", num_classes=self.num_classes),
             }
 
+        # https://github.com/Lightning-AI/torchmetrics/issues/531
         self.metrics = torch.nn.ModuleDict(self.metrics)
 
     def ordinal_regression_loss(self, y_pred, y_target):
@@ -96,6 +97,11 @@ class MetricsLossCallback(Callback):
                 f.write(f"{d}, {t}, {l}, {p}\n")
 
     def on_train_start(self, trainer, pl_module):
+        self.init_metrics_and_loss()
+        pl_module.loss_fct = self.loss_fct
+
+    def on_validation_start(self, trainer, pl_module):
+        self.init_metrics_and_loss()
         pl_module.loss_fct = self.loss_fct
 
     def on_validation_epoch_end(self, trainer, pl_module):

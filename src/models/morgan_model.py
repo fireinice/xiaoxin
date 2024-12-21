@@ -21,11 +21,11 @@ class MorganAttention(BaseModelModule):
         num_classes=2,
         loss_type="CLM",
         lr=1e-4,
-        Ensemble_Learn=False,
+        ensemble_learn=False,
         lr_t0=10,
     ):
         super().__init__(
-            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr,Ensemble_Learn
+            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr,ensemble_learn
         )
         self.lr_t0 = lr_t0
         self.validation_step_outputs = []
@@ -54,7 +54,7 @@ class MorganAttention(BaseModelModule):
                 )
             else:
                 if self.loss_type == 'OR' :
-                    if self.Ensemble_Learn:
+                    if self.ensemble_learn:
                         self.predict_layer = nn.ModuleList([
                             nn.Sequential(
                                 nn.Linear(256, 1, bias=True),
@@ -179,6 +179,8 @@ class MorganAttention(BaseModelModule):
         result = {"loss": loss, "preds": pred, "target": label}
         self.validation_step_outputs.append(result)
         return result
+
+
 
 
 

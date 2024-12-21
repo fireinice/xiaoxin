@@ -1,15 +1,13 @@
 import os
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = '0'
-from torch import nn
 
-from src.datamodule.Bacteria_Predict_datamodule import BacteriaPredictDataModule
-from src.datamodule.Bacteria_datamodule import BacteriaDataModule
+from src.datamodule.bacteria_predict_datamodule import BacteriaPredictDataModule
+from src.datamodule.bacteria_datamodule import BacteriaDataModule
 from src.datamodule.baseline_datamodule import BaselineDataModule
-from src.datamodule.morgan_chembert_datamodule import MorganChembertDataModule
 from src.datamodule.morgan_chembert_predict_datamodule import MorganChembertPredictDataModule
-from src.models.Bacteria_morgan_model import BacteriaMorganAttention
-from src.models.MetricsLoss_Model import MetricsLossCallback
+from src.models.bacteria_morgan_model import BacteriaMorganAttention
+from src.callback.metrics_callback import MetricsCallback
 from src.models.lightning_model import DrugTargetCoembeddingLightning
 from src.models.morgan_chembert_model import MorganChembertAttention
 from src.models.morgan_model import MorganAttention
@@ -81,7 +79,7 @@ if __name__ == "__main__":
                 classify=config.classify,
                 num_classes=config.num_classes,
                 loss_type=config.loss_type,
-                Ensemble_Learn=config.Ensemble_Learn,
+                ensemble_learn=config.ensemble_learn,
             )
             dm = BacteriaDataModule(config)
         else:
@@ -91,10 +89,9 @@ if __name__ == "__main__":
                                                                  classify=config.classify,
                                                                  num_classes=config.num_classes,
                                                                  loss_type=config.loss_type,
-                                                                 Ensemble_Learn=config.Ensemble_Learn,
+                                                                 ensemble_learn=config.ensemble_learn,
                                                                  )
             dm = BacteriaPredictDataModule(config)
-        metrics_callback = MetricsLossCallback(num_classes=config.num_classes, classify=config.classify)
     if config.model_architecture == "MorganAttention":
         model = MorganAttention(
             drug_dim=config.drug_shape,
@@ -102,10 +99,9 @@ if __name__ == "__main__":
             classify=config.classify,
             num_classes=config.num_classes,
             loss_type=config.loss_type,
-            Ensemble_Learn=config.Ensemble_Learn,
+            ensemble_learn=config.ensemble_learn,
         )
         dm = BaselineDataModule(config)
-        metrics_callback = MetricsLossCallback(num_classes=config.num_classes, classify=config.classify)
     if config.model_architecture == "MorganChembertAttention":
         if config.stage == 'Train':
             model = MorganChembertAttention(
@@ -113,7 +109,7 @@ if __name__ == "__main__":
                 classify=config.classify,
                 num_classes=config.num_classes,
                 loss_type=config.loss_type,
-                Ensemble_Learn=config.Ensemble_Learn,
+                ensemble_learn=config.ensemble_learn,
             )
             dm = MorganChembertDataModule(config)
         else:
@@ -122,10 +118,9 @@ if __name__ == "__main__":
                                                                  classify=config.classify,
                                                                  num_classes=config.num_classes,
                                                                  loss_type=config.loss_type,
-                                                                 Ensemble_Learn=config.Ensemble_Learn,
+                                                                 Ensemble_Learn=config.ensemble_learn,
                                                                  )
             dm = MorganChembertPredictDataModule(config)
-        metrics_callback = MetricsLossCallback(num_classes=config.num_classes, classify=config.classify)
     if config.model_architecture == "DrugTargetAttention":
         model = DrugTargetAttention(
             latent_dim=config.latent_dimension,
@@ -136,7 +131,8 @@ if __name__ == "__main__":
         else:
             dm = PreEncodedDataModule(config)
     strategy = strategies.DDPStrategy(find_unused_parameters=True)
-    trainer = Trainer(strategy=strategy, accelerator="gpu", devices='auto', fast_dev_run=config.dev,callbacks=[metrics_callback])
+    metrics_callback = MetricsCallback(num_classes=config.num_classes, classify=config.classify)
+    trainer = Trainer(strategy=strategy, accelerator="gpu", devices=[0, 1], fast_dev_run=config.dev,callbacks=[metrics_callback])
     if config.stage == 'Train':
         trainer.fit(model, datamodule=dm)
     elif config.stage == 'Test':

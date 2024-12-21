@@ -38,13 +38,6 @@ class MorganChembertDataModule(BaselineDataModule):
     def __init__(self, config: OmegaConf) -> None:
         super().__init__(config)
         self.logger = logging.getLogger("MorganChembertDataModule")
-        if config.model_architecture in (
-            "MorganChembertAttention",
-        ):
-            self.attention = True
-        else:
-            self.attention = False
-
         self.drug_featurizer_two = self.drug_featurizer[1]
         self.drug_featurizer = self.drug_featurizer[0]
 
@@ -53,9 +46,9 @@ class MorganChembertDataModule(BaselineDataModule):
         self.prepare_featurizer(self.drug_featurizer_two,self.all_drugs)
 
     def setup(self, stage: str):
+        self.setup_featurizer(self.drug_featurizer_two,self.all_drugs)
         self.setup_featurizer(self.target_featurizer, self.all_targets)
         self.setup_featurizer(self.drug_featurizer, self.all_drugs)
-        self.setup_featurizer(self.drug_featurizer_two,self.all_drugs)
         self.process_data()
         self.sampler = self.build_weighted_sampler(self.df_train,self._label_column)
 
@@ -118,7 +111,11 @@ class MorganChembertDataModule(BaselineDataModule):
 
         labels = torch.stack(labs, 0)
 
-        return drugs, targets, labels.to(torch.int64)
+        if self.classify:
+            labels = labels.to(torch.int64)
+        else:
+            labels = labels.to(torch.float32)
+        return drugs, targets, labels
 
     def train_dataloader(self):
         return DataLoader(

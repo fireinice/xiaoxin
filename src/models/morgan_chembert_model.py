@@ -21,11 +21,11 @@ class MorganChembertAttention(MorganAttention):
         num_classes=2,
         loss_type="CE",
         lr=1e-4,
-        Ensemble_Learn = False,
+        ensemble_learn = False,
         lr_t0=10,
     ):
         super().__init__(
-            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr , Ensemble_Learn,lr_t0
+            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr , ensemble_learn,lr_t0
         )
         self.drug_shape_two = drug_dim_two
         self.pooler_two = BertPooler(self.latent_dimension)
@@ -81,3 +81,16 @@ class MorganChembertAttention(MorganAttention):
         result = {'ID':index,'pred': pred}
         self.predict_step_outputs.append(result)
         return result
+
+    def on_predict_epoch_end(self,result):
+        gathered_outputs = self.all_gather(self.predict_step_outputs)
+        all_preds = torch.concat([x["pred"] for x in gathered_outputs])
+        all_proteome_ids = torch.concat([x["ID"] for x in gathered_outputs])
+        all_preds = all_preds.view(-1, all_preds.size(-1)).cpu().numpy()
+        all_proteome_ids = all_proteome_ids.view(-1).cpu().numpy()
+        df = pd.DataFrame({
+            'Prediction': all_preds.argmax(axis=1),
+            'ID': all_proteome_ids.astype(int),
+        })
+        df.to_csv('predictions.csv', index=False)
+        self.print("Predictions saved to 'predictions.csv'.")

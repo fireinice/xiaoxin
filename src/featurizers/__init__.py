@@ -21,5 +21,5 @@ from .molecule import (
     MorganFeaturizer,
     Mol2VecFeaturizer,
     MolRFeaturizer,
-    ChemBERTaFeaturizer
+    ChemBertaFeaturizer
 )

@@ -167,14 +167,16 @@ class Featurizer:
         #        break
 
         logg.info("start to save features:")
-        with h5py.File(self._save_path, "a",libver='latest') as h5fi:
+        with h5py.File(self._save_path, "a",libver='latest', ) as h5fi:
 
             #dset = h5fi.create_dataset(seq_h5, shape=feats.shape,data=feats.cpu().numpy())
 
             group = h5fi.create_group("root")
 
             for key, value in tqdm(features.items(), disable=not verbose, desc=self.name):
-                dset = group.create_dataset(key, shape=value.shape,data=value, dtype=np.float32)
+                dset = group.create_dataset(
+                    key, shape=value.shape, data=value, dtype=np.float32, compression='gzip',
+                    compression_opts=9,)
 
     def preload(
         self,

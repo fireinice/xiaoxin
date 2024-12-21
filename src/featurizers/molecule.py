@@ -356,14 +356,15 @@ class ChemBertaFeaturizer(Featurizer): #将Smiles转化成特征并且缓存到�
         self.per_tok = per_tok
         self.tokenizer = AutoTokenizer.from_pretrained('./models/chemberta')
         self.model = AutoModel.from_pretrained('./models/chemberta')
+        self._register_cuda("model", self.model)
         self.model.eval()
 
     def smiles_to_chemberta(self, smile: str) -> torch.Tensor:
 
         smile = canonicalize(smile)
-
         inputs = self.tokenizer(smile, add_special_tokens=False,truncation=True,return_tensors="pt")
-
+        if self.on_cuda:
+            inputs.to(self._device)
         with torch.no_grad():
             outputs = self.model(**inputs)
 

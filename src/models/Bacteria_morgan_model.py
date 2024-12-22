@@ -20,13 +20,13 @@ class BacteriaMorganAttention(MorganAttention):
         num_classes=2,
         loss_type="CE",
         lr=1e-4,
-        Ensemble_Learn = False,
+        ensemble_Learn = False,
         lr_t0=10,
     ):
         super().__init__(
-            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr , Ensemble_Learn,lr_t0
+            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr , ensemble_Learn,lr_t0
         )
-        self.cross_attn = nn.MultiheadAttention(
+        self.mh_attn = nn.MultiheadAttention(
             embed_dim=self.latent_dimension, num_heads=16, dropout=0.1, batch_first=True
         )
 
@@ -47,7 +47,7 @@ class BacteriaMorganAttention(MorganAttention):
         target_projection = target
         drug_projection = drug_projection.unsqueeze(1)
         att_mask = self.get_att_mask(target_projection)
-        drug_output, _ = self.cross_attn(
+        drug_output, _ = self.mh_attn(
             drug_projection,
             target_projection,
             target_projection,
@@ -68,6 +68,19 @@ class BacteriaMorganAttention(MorganAttention):
         result = {'ID': ids, 'pred': pred}
         self.predict_step_outputs.append(result)
         return result
+
+    def on_predict_epoch_end(self,result):
+        gathered_outputs = self.all_gather(self.predict_step_outputs)
+        all_preds = torch.concat([x["pred"] for x in gathered_outputs])
+        all_proteome_ids = torch.concat([x["ID"] for x in gathered_outputs])
+        all_preds = all_preds.view(-1, all_preds.size(-1)).cpu().numpy()
+        all_proteome_ids = all_proteome_ids.view(-1).cpu().numpy()
+        df = pd.DataFrame({
+            'Prediction': all_preds.argmax(axis=1),
+            'ID': all_proteome_ids.astype(int),
+        })
+        df.to_csv('predictions.csv', index=False)
+        self.print("Predictions saved to 'predictions.csv'.")
 
 
 

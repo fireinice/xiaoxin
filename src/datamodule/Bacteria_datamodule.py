@@ -25,7 +25,8 @@ class BinaryDataset_Bacteria(BinaryDataset):
             drug_featurizer: Featurizer,
             target_featurizer: Featurizer,
     ):
-        super().__init__(drugs, targets, labels, drug_featurizer, target_featurizer)
+        super().__init__(drugs, targets, labels, drug_featurizer, target_featurizer
+                         )
 
     def __getitem__(self, i: int):
         drug = self.drug_featurizer(self.drugs.iloc[i])
@@ -41,15 +42,18 @@ class BacteriaDataModule(BaselineDataModule):
     def __init__(self, config: OmegaConf) -> None:
         super().__init__(config)
         self.logger = logging.getLogger("BacteriaDataModule")
+        self._all_target_sequences_cache = None
 
     @property
     def all_targets(self):
+        if self._all_target_sequences_cache is not None:
+            return self._all_target_sequences_cache
         all_target_sequences = []
         for target in self._df[self._target_column]:
             target_list = ast.literal_eval(target)
             all_target_sequences.extend(target_list)
-        all_target_sequences = list(dict.fromkeys(all_target_sequences))
-        return all_target_sequences
+        self._all_target_sequences_cache = list(dict.fromkeys(all_target_sequences))
+        return self._all_target_sequences_cache
 
     def prepare_data(self):
         super(BacteriaDataModule, self).prepare_data()
@@ -95,13 +99,13 @@ class BacteriaDataModule(BaselineDataModule):
     def train_dataloader(self):
         return DataLoader(
             self.train_data,
-            shuffle=self.shuffle,
+            # shuffle=self.shuffle,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
             pin_memory=True,
             drop_last=True,
-            # sampler=self.sampler
+            sampler=self.sampler
         )
 
     def val_dataloader(self):

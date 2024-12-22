@@ -11,7 +11,7 @@ import typing as T
 from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 
-from src.datamodule.Bacteria_datamodule import BacteriaDataModule, BinaryDataset_Bacteria
+from src.datamodule.bacteria_datamodule import BacteriaDataModule, BinaryDataset_Bacteria
 from src.featurizers import Featurizer
 from src.featurizers.protein import FOLDSEEK_MISSING_IDX
 from src.models.morgan_chembert_model import MorganChembertAttention

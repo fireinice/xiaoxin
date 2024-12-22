@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import torch
 from spacecutter.models import LogisticCumulativeLink
 from torch import nn
@@ -20,14 +21,15 @@ class MorganAttention(BaseModelModule):
         num_classes=2,
         loss_type="CLM",
         lr=1e-4,
-        Ensemble_Learn=False,
+        ensemble_learn=False,
         lr_t0=10,
     ):
         super().__init__(
-            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr,Ensemble_Learn
+            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr,ensemble_learn
         )
         self.lr_t0 = lr_t0
         self.validation_step_outputs = []
+        self.predict_step_outputs = []
         self.pooler = BertPooler(self.latent_dimension)
 
         self.drug_projector = nn.Sequential(
@@ -41,7 +43,8 @@ class MorganAttention(BaseModelModule):
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=1)
 
         self.mlp = MLP(self.latent_dimension, 512, 256)
-        self.link = LogisticCumulativeLink(self.num_classes)
+        if self.classify:
+            self.link = LogisticCumulativeLink(self.num_classes)
 
         if classify:
             if self.num_classes == 2:
@@ -51,7 +54,7 @@ class MorganAttention(BaseModelModule):
                 )
             else:
                 if self.loss_type == 'OR' :
-                    if self.Ensemble_Learn:
+                    if self.ensemble_learn:
                         self.predict_layer = nn.ModuleList([
                             nn.Sequential(
                                 nn.Linear(256, 1, bias=True),
@@ -110,15 +113,17 @@ class MorganAttention(BaseModelModule):
 
     def classifier_forward(self, out_embedding ):
         x = self.mlp(out_embedding)
-        if self.loss_type == 'OR' and self.Ensemble_Learn:
-            predict = [classifier(x) for classifier in self.predict_layer]
-            predict = torch.cat(predict, dim=1)
-        elif self.loss_type == 'CLM':
-            predict = self.predict_layer(x)
-            predict = self.link(predict)
+        if self.classify:
+            if self.loss_type == 'OR' and self.Ensemble_Learn:
+                predict = [classifier(x) for classifier in self.predict_layer]
+                predict = torch.cat(predict, dim=1)
+            elif self.loss_type == 'CLM':
+                predict = self.predict_layer(x)
+                predict = self.link(predict)
+            else:
+                predict = self.predict_layer(x)
         else:
             predict = self.predict_layer(x)
-
         predict = torch.squeeze(predict, dim=-1)
         return predict
 
@@ -162,35 +167,20 @@ class MorganAttention(BaseModelModule):
         pred = self.forward(drug, target)
         loss = self.loss_fct(pred, label)
         self.log("val/loss", loss)
-        self.save_to_txt(drug, target, label, pred, file_path="result_before.txt")
-        if self.loss_type=="OR":
-            pred = self.ordinal_regression_predict(pred)
-        elif self.loss_type=='CLM':
-            pred = self.clm_predict(pred)
+        if self.classify:
+            if self.loss_type == "OR":
+                pred = self.ordinal_regression_predict(pred)
+            elif self.loss_type == 'CLM':
+                pred = self.clm_predict(pred)
+            else:
+                pred = pred
         else:
             pred = pred
-        self.save_to_txt(drug, target, label, pred, file_path="result_after.txt")
         result = {"loss": loss, "preds": pred, "target": label}
         self.validation_step_outputs.append(result)
         return result
 
-    def on_validation_epoch_end(self):
-        gathered_outputs = self.all_gather(self.validation_step_outputs)
-        all_loss = torch.stack([x["loss"] for x in gathered_outputs]).mean()
-        all_preds = torch.concat([x["preds"] for x in gathered_outputs])
-        all_target = torch.concat([x["target"] for x in gathered_outputs])
-        all_preds = all_preds.view(-1, all_preds.size(-1))
-        all_target = all_target.view(-1)
-        self.print(f"*****Epoch {self.current_epoch}*****")
-        self.print(f"loss: {all_loss}")
-        for name, metric in self.metrics.items():
-            value = metric(all_preds, all_target)
-            if np.isscalar(value):
-                self.log(f"val/{name}", value)
-            logging.info(f"val/{name}: {value}")
-            if name == "ConfusionMatrix":
-                confusion_matrix_np = value.cpu().numpy()
-                np.savetxt(f"confusion_matrix.csv", confusion_matrix_np, delimiter=",", fmt="%d")
-            self.print(f"val/{name}: {value}")
-        self.validation_step_outputs.clear()
+
+
+
 

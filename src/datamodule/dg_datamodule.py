@@ -35,6 +35,7 @@ class DGDataModule(LightningDataModule):
         self._seed = config.replicate
         self.classify = config.classify
         self.bins = config.bins
+        self.dataset_path = config.dataset_path
         self.load_data()
 
     def load_data(self):

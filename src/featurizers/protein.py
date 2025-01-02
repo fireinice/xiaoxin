@@ -5,6 +5,9 @@ import hashlib
 import pickle as pk
 import typing as T
 from pathlib import Path
+
+from transformers import pipeline
+
 from .base import Featurizer
 from ..utils import get_logger
 
@@ -77,7 +80,6 @@ class ESMFeaturizer(Featurizer):
         tokens = token_representations[0, 1 : len(seq) + 1]
 
         return tokens.mean(0)
-
 
 class ProseFeaturizer(Featurizer):
     def __init__(self, save_dir: Path = Path().absolute(), per_tok=False):
@@ -189,24 +191,49 @@ class ProtT5XLUniref50Featurizer(Featurizer):
         self.per_tok = per_tok
 
         (
-            self._protbert_model,
-            self._protbert_tokenizer,
+            self._prot5_model,
+            self._prot5_tokenizer,
         ) = ProtT5XLUniref50Featurizer._get_T5_model()
-        self._register_cuda("model", self._protbert_model)
+
+        self._prot5_feat = pipeline(
+            "feature-extraction",
+            model=self._prot5_model,
+            tokenizer=self._prot5_tokenizer,
+        )
+
+        self._register_cuda("model", self._prot5_model)
+        self._register_cuda(
+            "featurizer", self._prot5_feat, self._feat_to_device
+        )
+
+    def _feat_to_device(self, pipe, device):
+        from transformers import pipeline
+
+        if device.type == "cpu":
+            d = -1
+        else:
+            d = device.index
+
+        pipe = pipeline(
+            "feature-extraction",
+            model=self._prot5_model,
+            tokenizer=self._prot5_tokenizer,
+            device=d,
+        )
+        self._prot5_feat = pipe
+        return pipe
 
     @staticmethod
     def _get_T5_model():
         from transformers import T5Tokenizer, T5EncoderModel
 
         model = T5EncoderModel.from_pretrained(
-            "Rostlab/prot_t5_xl_uniref50",
-            cache_dir=f"{MODEL_CACHE_DIR}/huggingface/transformers",
+            "./models/prot5",
         )
         model = model.eval()  # set model to evaluation model
         tokenizer = T5Tokenizer.from_pretrained(
-            "Rostlab/prot_t5_xl_uniref50",
+            "./models/prot5",
             do_lower_case=False,
-            cache_dir=f"{MODEL_CACHE_DIR}/huggingface/transformers",
         )
 
         return model, tokenizer
@@ -219,27 +246,18 @@ class ProtT5XLUniref50Featurizer(Featurizer):
         if len(seq) > self._max_len - 2:
             seq = seq[: self._max_len - 2]
 
-        token_encoding = self._protbert_tokenizer.batch_encode_plus(
-            ProtT5XLUniref50Featurizer._space_sequence(seq),
-            add_special_tokens=True,
-            padding="longest",
-        )
-        input_ids = torch.tensor(token_encoding["input_ids"])
-        attention_mask = torch.tensor(token_encoding["attention_mask"])
-
-        input_ids = input_ids.to(self.device)
-        attention_mask = attention_mask.to(self.device)
-
         with torch.no_grad():
-            embedding = self._cuda_registry["model"][0](
-                input_ids=input_ids, attention_mask=attention_mask
+
+            embedding = torch.tensor(
+                self._cuda_registry["featurizer"][0](self._space_sequence(seq))
             )
-            embedding = embedding.last_hidden_state
             seq_len = len(seq)
             start_Idx = 1
             end_Idx = seq_len + 1
             seq_emb = embedding[0][start_Idx:end_Idx]
 
+        if self.per_tok:
+            return seq_emb
         return seq_emb.mean(0)
 
 
@@ -440,6 +458,69 @@ class ProtBertTokenFeaturizer(Featurizer):
 
         embedding = torch.tensor(
             self._cuda_registry["featurizer"][0](self._space_sequence(self._space_sequence(seq)))
+        )
+        seq_len = len(seq)
+        start_Idx = 1
+        end_Idx = seq_len + 1
+        feats = embedding.squeeze()[start_Idx:end_Idx]
+
+        if self.per_tok:
+            return feats
+        return feats.mean(0)
+
+class ESM2Featurizer(Featurizer):
+    def __init__(self, save_dir: Path = Path().absolute(), per_tok=False):
+        super().__init__("ESM2", 320, save_dir)
+
+        from transformers import AutoTokenizer, AutoModel, pipeline
+
+        self._max_len = 1024
+        self.per_tok = per_tok
+
+        self._esm2_tokenizer = AutoTokenizer.from_pretrained(
+            "./models/esm2",
+            do_lower_case=False,
+        )
+        self._ems2_model = AutoModel.from_pretrained(
+            "./models/esm2",
+        )
+        self._protbert_feat = pipeline(
+            "feature-extraction",
+            model=self._ems2_model,
+            tokenizer=self._esm2_tokenizer,
+        )
+
+        self._register_cuda("model", self._ems2_model)
+        self._register_cuda(
+            "featurizer", self._protbert_feat, self._feat_to_device
+        )
+
+    def _feat_to_device(self, pipe, device):
+        from transformers import pipeline
+
+        if device.type == "cpu":
+            d = -1
+        else:
+            d = device.index
+
+        pipe = pipeline(
+            "feature-extraction",
+            model=self._ems2_model,
+            tokenizer=self._esm2_tokenizer,
+            device=d,
+        )
+        self._protbert_feat = pipe
+        return pipe
+
+    def _space_sequence(self, x):
+        return " ".join(list(x))
+
+    def _transform(self, seq: str):
+        if len(seq) > self._max_len - 2:
+            seq = seq[: self._max_len - 2]
+
+        embedding = torch.tensor(
+            self._cuda_registry["featurizer"][0](self._space_sequence(seq))
         )
         seq_len = len(seq)
         start_Idx = 1

@@ -43,9 +43,19 @@ class MorganChembertAttention(MorganAttention):
                 drug: torch.Tensor,
                 target: torch.Tensor,):
 
+        b, drug_d = drug.shape
+
+        b, n, target_d = target.shape
+
         drug_projection_one = self.drug_projector(drug['drugs_one'])
+        drug_projection_one = torch.tanh(drug_projection_one)
         drug_projection_two = self.drug_projector_two(drug['drugs_two'])
-        target_projection = target
+        drug_projection_two = torch.tanh(drug_projection_two)
+        if target_d != self.latent_dimension:
+            target_projection = self.target_projector(target)
+            target_projection = torch.tanh(target_projection)
+        else:
+            target_projection = target
 
         drug_projection_one = drug_projection_one.unsqueeze(1)
         drug_projection_two = drug_projection_two.unsqueeze(1)

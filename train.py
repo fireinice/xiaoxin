@@ -34,7 +34,7 @@ def init_config() -> OmegaConf:
         default="yongbo_dti_dg",
     )
     parser.add_argument(
-        "--config", help="YAML config file", default="configs/multiclass_config.yaml"
+        "--config", help="YAML config file", default="configs/chembert_muilt.yaml"
     )
     parser.add_argument(
         "--ds", help="Dataset to select", default=""
@@ -110,6 +110,7 @@ if __name__ == "__main__":
                 num_classes=config.num_classes,
                 loss_type=config.loss_type,
                 ensemble_learn=config.ensemble_learn,
+                target_dim=config.target_shape
             )
             dm = MorganChembertDataModule(config)
         else:

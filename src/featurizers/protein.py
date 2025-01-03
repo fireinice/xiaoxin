@@ -399,7 +399,6 @@ class FoldSeekFeaturizer(Featurizer):
         return fs_embedding
 
 
-
 class ProtBertTokenFeaturizer(Featurizer):
     def __init__(self, save_dir: Path = Path().absolute(), per_tok=False):
         super().__init__("ProtBert", 1024,save_dir)
@@ -413,7 +412,6 @@ class ProtBertTokenFeaturizer(Featurizer):
         self._protbert_model = AutoModel.from_pretrained('./models/probert').to("cuda").eval()
 
 
-
         self._protbert_feat = pipeline(
             "feature-extraction",
             model=self._protbert_model,
@@ -425,11 +423,6 @@ class ProtBertTokenFeaturizer(Featurizer):
         self._register_cuda(
             "featurizer", self._protbert_feat, self._feat_to_device
         )
-
-
-      
-
-    
 
     def _feat_to_device(self, pipe, device):
         from transformers import pipeline
@@ -526,6 +519,74 @@ class ESM2Featurizer(Featurizer):
         start_Idx = 1
         end_Idx = seq_len + 1
         feats = embedding.squeeze()[start_Idx:end_Idx]
+
+        if self.per_tok:
+            return feats
+        return feats.mean(0)
+
+
+class AnkhFeaturizer(Featurizer):
+    def __init__(self, save_dir: Path = Path().absolute(), per_tok=False):
+        super().__init__("Ankh", 1024, save_dir)
+
+        from transformers import AutoTokenizer, AutoModel, pipeline
+
+        self._max_len = 1024
+        self.per_tok = per_tok
+
+        self._ankh_tokenizer = AutoTokenizer.from_pretrained(
+            "./models/ankh",
+            do_lower_case=False,
+        )
+
+        self._ankh_model = AutoModel.from_pretrained(
+            "./models/ankh",
+        ).to("cuda").eval()
+
+        self._ankh_feat = pipeline(
+            "feature-extraction",
+            model=self._ankh_model,
+            tokenizer=self._ankh_tokenizer,
+        )
+
+        self._register_cuda("model", self._ankh_model)
+        self._register_cuda(
+            "featurizer", self._ankh_feat, self._feat_to_device
+        )
+
+    def _feat_to_device(self, pipe, device):
+        from transformers import pipeline
+
+        if device.type == "cpu":
+            d = -1
+        else:
+            d = device.index
+
+        pipe = pipeline(
+            "feature-extraction",
+            model=self._ankh_model,
+            tokenizer=self._ankh_tokenizer,
+            device=d,
+        )
+        self._ankh_feat = pipe
+        return self._ankh_feat
+
+    def _space_sequence(self, x):
+        return " ".join(list(x))
+
+    def _transform(self, seq: str):
+        if len(seq) > self._max_len - 2:
+            seq = seq[: self._max_len - 2]
+
+        with torch.no_grad():
+            embedding = torch.tensor(
+                self._cuda_registry["featurizer"][0](self._space_sequence(seq))
+            )
+            print(embedding)
+            seq_len = len(seq)
+            start_Idx = 1
+            end_Idx = seq_len + 1
+            feats = embedding.squeeze()[start_Idx:end_Idx]
 
         if self.per_tok:
             return feats

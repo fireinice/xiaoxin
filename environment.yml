@@ -4,18 +4,19 @@ channels:
   - conda-forge
   - dglteam/label/th24_cu124
 dependencies:
+  - accelerate
   - biopython
-  - cuda-cudart<12.5
+  - cuda-cudart=12.1
   - dataclasses<1.0
   - dgl
-  - gget<1.0
+  - bioconda::gget<1.0
   - huggingface_hub
   - lxml
-  - mygene<4
+  - bioconda::mygene<4
   - omegaconf
   - openpyxl<4.0
   - pandas<3.0
-  - psutil
+  - conda-forge::psutil
   - pydantic
   - pysmiles
   - pytdc
@@ -30,6 +31,8 @@ dependencies:
     - deepchem==2.8.0
     - dscript==0.2.8
     - mol2vec==0.2.2
+    - spacecutter==0.2.1
     - torchao==0.7.0
     - torchtune==0.4.0
 
+prefix: "/root/.local/share/mamba/envs/xx"

@@ -175,8 +175,7 @@ class Featurizer:
 
             for key, value in tqdm(features.items(), disable=not verbose, desc=self.name):
                 dset = group.create_dataset(
-                    key, shape=value.shape, data=value, dtype=np.float32, compression='gzip',
-                    compression_opts=9,)
+                    key, shape=value.shape, data=value, dtype=np.float32)
 
     def preload(
         self,
@@ -196,12 +195,16 @@ class Featurizer:
                 #keys = group.keys()
 
                 #keys = dict(zip(keys,[0]*len(keys)))
-
+                shape = None
                 for seq in tqdm(seq_list, disable=not verbose, desc=self.name):
                     seq_h5 = sanitize_string(seq)
                     if seq_h5 in group:
-
-                        feats = torch.from_numpy(group[seq_h5][:])
+                        try:
+                            feats = torch.from_numpy(group[seq_h5][:])
+                            if shape is None:
+                                shape  = feats.shape
+                        except:
+                            feats = torch.rand(shape)
                         #logg.info(f"feats length: {feats.shape}")
                     else:
                         #not found

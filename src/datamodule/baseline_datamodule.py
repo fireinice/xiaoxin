@@ -162,7 +162,6 @@ class BaselineDataModule(DGDataModule):
             drugs = torch.stack(d_emb, 0)
         except Exception as e:
             logg.error(f"Testing failed with exception {e}")
-            print(d_emb)
 
         targets = pad_sequence(
             t_emb, batch_first=True, padding_value=FOLDSEEK_MISSING_IDX

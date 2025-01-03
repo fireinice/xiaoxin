@@ -16,10 +16,11 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from argparse import ArgumentParser
 
 from pytorch_lightning import Trainer, seed_everything, strategies
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities import rank_zero_info
 from omegaconf import OmegaConf
 
-from src.models.drug_target_attention import DrugTargetAttention
+# from src.models.drug_target_attention import DrugTargetAttention
 from src.datamodule.pre_encoded_datamodule import PreEncodedDataModule
 from src.datamodule.finetune_chembert_datamodule import FineTuneChemBertDataModule
 from src.datamodule.morgan_chembert_datamodule import MorganChembertDataModule
@@ -64,6 +65,9 @@ if __name__ == "__main__":
     # 固定训练过程
     # FIXME: here should not be replicate
     seed_everything(config.replicate, workers=True)
+    if config.ds == 'test':
+        config.batch_size = 4
+        config.num_workers = 2
     # seed_everything(44, workers=True)
     if config.model_architecture == "DrugTargetCoembedding":
         model = DrugTargetCoembeddingLightning(
@@ -133,7 +137,17 @@ if __name__ == "__main__":
             dm = PreEncodedDataModule(config)
     strategy = strategies.DDPStrategy(find_unused_parameters=True)
     metrics_callback = MetricsCallback(num_classes=config.num_classes, classify=config.classify)
-    trainer = Trainer(strategy=strategy, accelerator="gpu", devices=[0, 1], fast_dev_run=config.dev,callbacks=[metrics_callback])
+    fn = f"{config.experiment_id}-epoch={{epoch}}-metric={{{config.watch_metric}:.2f}}"
+    metric_save_callback = ModelCheckpoint(
+        monitor=config.watch_metric,
+        dirpath='ckpts',
+        filename=fn,
+        save_top_k=3,
+        mode='max',
+        save_on_train_epoch_end=False,
+        auto_insert_metric_name=False
+    )
+    trainer = Trainer(strategy=strategy, accelerator="gpu", devices=[0, 1], fast_dev_run=config.dev,callbacks=[metrics_callback,metric_save_callback])
     if config.stage == 'Train':
         trainer.fit(model, datamodule=dm)
     elif config.stage == 'Test':

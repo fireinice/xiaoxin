@@ -7,7 +7,7 @@ from omegaconf import OmegaConf
 import typing as T
 from torch.nn.utils.rnn import pad_sequence
 
-from src.datamodule.Bacteria_Predict_datamodule import BacteriaPredictDataModule
+from src.datamodule.bacteria_predict_datamodule import BacteriaPredictDataModule
 from src.datamodule.morgan_chembert_datamodule import BinaryDataset_Double, MorganChembertDataModule
 from src.featurizers import Featurizer
 from src.featurizers.protein import FOLDSEEK_MISSING_IDX

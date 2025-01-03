@@ -18,6 +18,7 @@ from numpy.random import choice
 from sklearn.model_selection import KFold, train_test_split
 from torch.nn.utils.rnn import pad_sequence
 from tdc.benchmark_group import dti_dg_group
+from torch.utils.data.sampler import WeightedRandomSampler, Sampler
 
 from .featurizers import Featurizer
 from .featurizers.protein import FOLDSEEK_MISSING_IDX
@@ -58,6 +59,7 @@ def get_task_dir(task_name: str):
         "bindingdb_multi_class": "./dataset/BindingDB_multi_class",
         "bindingdb_multi_class_small": "./dataset/BindingDB_multi_class_small",
         "bindingdb_multi_class_half": "./dataset/BindingDB_multi_class_half",
+        "bindingdb_mc": "./dataset/BindingDB_MC",
     }
 
     return Path(task_paths[task_name.lower()]).resolve()
@@ -222,6 +224,7 @@ class DTIDataModule(pl.LightningDataModule):
             "shuffle": shuffle,
             "num_workers": num_workers,
             "collate_fn": drug_target_collate_fn,
+            "pin_memory": True
         }
 
         self._csv_kwargs = {
@@ -812,6 +815,7 @@ class TDCDataModule(pl.LightningDataModule):
         self.target_featurizer.preload(all_targets)
         self.target_featurizer.cpu()
 
+ 
         if stage == "fit" or stage is None:
             self.data_train = BinaryDataset(
                 self.df_train[self._drug_column],
@@ -829,6 +833,13 @@ class TDCDataModule(pl.LightningDataModule):
                 self.target_featurizer,
             )
 
+            label_counts = self.df_train[self._label_column].value_counts().to_dict()
+            weights = self.calculate_weights(label_counts, self.data_train)
+            self._weights = torch.DoubleTensor(weights)   
+            self.sampler = WeightedRandomSampler(
+                self._weights, int(len(self.df_train)*0.7), replacement=False
+            )            
+
         if stage == "test" or stage is None:
             self.data_test = BinaryDataset(
                 self.df_test[self._drug_column],
@@ -838,6 +849,17 @@ class TDCDataModule(pl.LightningDataModule):
                 self.target_featurizer,
             )
 
+    def calculate_weights(self, label_dict, dataset):
+        arr = []
+        for _, _, label in dataset:
+            count = label_dict[label.item()]
+            if count == 0:
+                weight = 0
+            else:
+                weight = len(dataset) / count
+            arr.append(weight)
+        return arr
+
     def train_dataloader(self):
         return DataLoader(self.data_train, **self._loader_kwargs, drop_last=True)
 
@@ -846,6 +868,7 @@ class TDCDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(self.data_test, **self._loader_kwargs, drop_last=True)
+
 #直接读取CSV文件
 class CustomDataset(Dataset):
     def __init__(self, dataframe, indices):

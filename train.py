@@ -1,10 +1,13 @@
 import os
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = '0'
-from torch import nn
 
+from src.datamodule.bacteria_predict_datamodule import BacteriaPredictDataModule
+from src.datamodule.bacteria_datamodule import BacteriaDataModule
 from src.datamodule.baseline_datamodule import BaselineDataModule
-from src.datamodule.morgan_chembert_datamodule import MorganChembertDataModule
+from src.datamodule.morgan_chembert_predict_datamodule import MorganChembertPredictDataModule
+from src.models.bacteria_morgan_model import BacteriaMorganAttention
+from src.callback.metrics_callback import MetricsCallback
 from src.models.lightning_model import DrugTargetCoembeddingLightning
 from src.models.morgan_chembert_model import MorganChembertAttention
 from src.models.morgan_model import MorganAttention
@@ -31,14 +34,17 @@ def init_config() -> OmegaConf:
         default="yongbo_dti_dg",
     )
     parser.add_argument(
-        "--config", help="YAML config file", default="configs/multiclass_config.yaml"
+        "--config", help="YAML config file", default="configs/chembert_muilt.yaml"
     )
     parser.add_argument(
         "--ds", help="Dataset to select", default=""
     )
     parser.add_argument(
         "--dev", action='store_true', help="fast dev run"
-    )    
+    )
+    parser.add_argument(
+        "--stage",  help="fast dev run",default='Train'
+    )
     args = parser.parse_args()
     config = OmegaConf.load(args.config)
     arg_overrides = {k: v for k, v in vars(args).items() if v is not None}
@@ -65,6 +71,27 @@ if __name__ == "__main__":
             classify=config.classify
         )
         dm = BaselineDataModule(config)
+    if config.model_architecture == "BacteriaMorganAttention":
+        if config.stage == 'Train':
+            model = BacteriaMorganAttention(
+                drug_dim=config.drug_shape,
+                latent_dim=config.latent_dimension,
+                classify=config.classify,
+                num_classes=config.num_classes,
+                loss_type=config.loss_type,
+                ensemble_learn=config.ensemble_learn,
+            )
+            dm = BacteriaDataModule(config)
+        else:
+            model = BacteriaMorganAttention.load_from_checkpoint(checkpoint_path=config.checkpoint_path,
+                                                                 drug_dim=config.drug_shape,
+                                                                 latent_dim=config.latent_dimension,
+                                                                 classify=config.classify,
+                                                                 num_classes=config.num_classes,
+                                                                 loss_type=config.loss_type,
+                                                                 ensemble_learn=config.ensemble_learn,
+                                                                 )
+            dm = BacteriaPredictDataModule(config)
     if config.model_architecture == "MorganAttention":
         model = MorganAttention(
             drug_dim=config.drug_shape,
@@ -72,19 +99,29 @@ if __name__ == "__main__":
             classify=config.classify,
             num_classes=config.num_classes,
             loss_type=config.loss_type,
-            Ensemble_Learn=False,
+            ensemble_learn=config.ensemble_learn,
         )
-        # model = MorganAttention.load_from_checkpoint(config.checkpoint_path)
         dm = BaselineDataModule(config)
     if config.model_architecture == "MorganChembertAttention":
-        model = MorganChembertAttention(
-            latent_dim=config.latent_dimension,
-            classify=config.classify,
-            num_classes=config.num_classes,
-            loss_type=config.loss_type,
-            Ensemble_Learn=False,
-        )
-        dm = MorganChembertDataModule(config)
+        if config.stage == 'Train':
+            model = MorganChembertAttention(
+                latent_dim=config.latent_dimension,
+                classify=config.classify,
+                num_classes=config.num_classes,
+                loss_type=config.loss_type,
+                ensemble_learn=config.ensemble_learn,
+                target_dim=config.target_shape
+            )
+            dm = MorganChembertDataModule(config)
+        else:
+            model = MorganChembertAttention.load_from_checkpoint(checkpoint_path=config.checkpoint_path,
+                                                                 latent_dim=config.latent_dimension,
+                                                                 classify=config.classify,
+                                                                 num_classes=config.num_classes,
+                                                                 loss_type=config.loss_type,
+                                                                 Ensemble_Learn=config.ensemble_learn,
+                                                                 )
+            dm = MorganChembertPredictDataModule(config)
     if config.model_architecture == "DrugTargetAttention":
         model = DrugTargetAttention(
             latent_dim=config.latent_dimension,
@@ -95,6 +132,11 @@ if __name__ == "__main__":
         else:
             dm = PreEncodedDataModule(config)
     strategy = strategies.DDPStrategy(find_unused_parameters=True)
-    trainer = Trainer(strategy=strategy, accelerator="gpu", devices='auto', fast_dev_run=config.dev)
-    trainer.fit(model, datamodule=dm)
-    # trainer.validate(model, datamodule=dm)
+    metrics_callback = MetricsCallback(num_classes=config.num_classes, classify=config.classify)
+    trainer = Trainer(strategy=strategy, accelerator="gpu", devices=[0, 1], fast_dev_run=config.dev,callbacks=[metrics_callback])
+    if config.stage == 'Train':
+        trainer.fit(model, datamodule=dm)
+    elif config.stage == 'Test':
+        trainer.validate(model, datamodule=dm)
+    else:
+        trainer.predict(model=model, dataloaders=dm)

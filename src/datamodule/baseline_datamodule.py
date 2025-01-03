@@ -9,7 +9,6 @@ from omegaconf import OmegaConf
 import typing as T
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from torch.utils.data.sampler import WeightedRandomSampler
 
 from src.featurizers.protein import FOLDSEEK_MISSING_IDX
 from src.utils import get_featurizer, logg
@@ -69,7 +68,7 @@ def regression(df,dataset_name, base_path="."):
         print(f"加载缓存文件: {cache_path}")
         return pd.read_csv(cache_path)
     print(f"未找到缓存文件，重新计算: {cache_path}")
-    df['Y'] = np.log(df['Y'])
+    df['Y'] = np.log(df['Y'].clip(lower=1e-8))  # 避免非正数导致的错误
     df.to_csv(cache_path, index=False)
     print(f"结果已缓存至: {cache_path}")
     return df
@@ -81,6 +80,7 @@ class BaselineDataModule(DGDataModule):
         self.logger = logging.getLogger("BaselineDataModule")
         if config.model_architecture in (
             "MorganAttention",
+            "MorganChembertAttention",
         ):
             self.attention = True
         else:
@@ -169,19 +169,22 @@ class BaselineDataModule(DGDataModule):
         )
 
         labels = torch.stack(labs, 0)
-
-        return drugs, targets, labels.to(torch.int64)
+        if self.classify:
+            labels = labels.to(torch.int64)
+        else:
+            labels = labels.to(torch.float64)
+        return drugs, targets, labels
 
     def train_dataloader(self):
         return DataLoader(
             self.train_data,
             batch_size=self.batch_size,
-            # shuffle=self.shuffle,
+            shuffle=self.shuffle,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
             drop_last=True,
             pin_memory=True,
-            sampler=self.sampler
+            # sampler=self.sampler
         )
 
     def val_dataloader(self):

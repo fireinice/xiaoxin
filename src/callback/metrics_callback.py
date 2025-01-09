@@ -1,10 +1,8 @@
-import pandas as pd
 import torch
 import torchmetrics
 import numpy as np
 import logging
 from pytorch_lightning import Callback
-from transformers import trainer
 
 
 class MetricsCallback(Callback):
@@ -29,28 +27,17 @@ class MetricsCallback(Callback):
         else:
             self.metrics = {
                 "class_accuracy": torchmetrics.classification.MulticlassAccuracy(num_classes=self.num_classes,
-                                                                                 average=None),
+                                                                                 average='weighted'),
                 "class_recall": torchmetrics.classification.MulticlassRecall(num_classes=self.num_classes,
-                                                                             average=None),
+                                                                             average='weighted'),
                 "class_precision": torchmetrics.classification.MulticlassPrecision(num_classes=self.num_classes,
-                                                                                   average=None),
-                "F1Score": torchmetrics.classification.MulticlassF1Score(num_classes=self.num_classes, average=None),
+                                                                                   average='weighted'),
                 "F1Score_Average": torchmetrics.classification.MulticlassF1Score(num_classes=self.num_classes,
                                                                                  average='weighted'),
                 "ConfusionMatrix": torchmetrics.ConfusionMatrix(task="multiclass", num_classes=self.num_classes),
             }
 
         self.metrics = torch.nn.ModuleDict(self.metrics)
-
-    def save_to_txt(self, drug, target, label, pred, file_path):
-        drug = drug.cpu().numpy() if torch.is_tensor(drug) else drug
-        target = target.cpu().numpy() if torch.is_tensor(target) else target
-        label = label.cpu().numpy() if torch.is_tensor(label) else label
-        pred = pred.cpu().numpy() if torch.is_tensor(pred) else pred
-        with open(file_path, 'w') as f:
-            f.write("drug, target, label, pred\n")
-            for d, t, l, p in zip(drug, target, label, pred):
-                f.write(f"{d}, {t}, {l}, {p}\n")
 
     def on_validation_epoch_end(self, trainer, pl_module):
         device = pl_module.device
@@ -69,11 +56,11 @@ class MetricsCallback(Callback):
             metric = metric.to(device)
             value = metric(all_preds, all_target)
             logging.info(f"val/{name}: {value}")
-            if name == "F1Score_Average":
-                pl_module.log(f"val/{name}", value)
-            elif name == "ConfusionMatrix":
+            if name == "ConfusionMatrix":
                 confusion_matrix_np = value.cpu().numpy()
                 np.savetxt(f"confusion_matrix.csv", confusion_matrix_np, delimiter=",", fmt="%d")
+            else:
+                pl_module.log(f"val/{name}", value)
             pl_module.print(f"val/{name}: {value}")
         pl_module.validation_step_outputs.clear()
 

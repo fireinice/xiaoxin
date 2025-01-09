@@ -1,12 +1,11 @@
 import torch
-from torch import nn
-from src.architectures import BertPooler
-from src.models.morgan_attention_model import MorganAttention
+from src.architectures import MLP
+from src.models.morgan_chembert_model import MorganChemBertAttention
 import torch.nn.functional as F
 
 
 
-class MorganChemBertAttention(MorganAttention):
+class MorganChemBertMlp(MorganChemBertAttention):
     def __init__(
         self,
         drug_dim=2048,
@@ -21,19 +20,10 @@ class MorganChemBertAttention(MorganAttention):
         lr_t0=10,
     ):
         super().__init__(
-            drug_dim, target_dim, latent_dim, classify, num_classes, loss_type, lr , ensemble_learn,lr_t0
+            drug_dim, drug_dim_two,target_dim, latent_dim, classify, num_classes, loss_type, lr , ensemble_learn,lr_t0
         )
-        self.drug_shape_two = drug_dim_two
-        self.pooler_two = BertPooler(self.latent_dimension)
-        self.drug_projector_two = nn.Sequential(
-            nn.Linear(self.drug_shape_two, self.latent_dimension)
-        )
-        self.input_norm_two = nn.LayerNorm(self.latent_dimension)
-        encoder_layer_two = nn.TransformerEncoderLayer(d_model=self.latent_dimension, nhead=16, batch_first=True)
-        self.transformer_encoder_two = nn.TransformerEncoder(encoder_layer_two, num_layers=1)
-
-        self.weight_one = nn.Parameter(torch.tensor(0.5, requires_grad=True))
-        self.weight_two = nn.Parameter(torch.tensor(0.5, requires_grad=True))
+        self.mlp_one = MLP(self.latent_dimension, self.latent_dimension, self.latent_dimension)
+        self.mlp_two = MLP(self.latent_dimension, self.latent_dimension, self.latent_dimension)
 
     def forward(self,
                 drug: torch.Tensor,
@@ -59,10 +49,8 @@ class MorganChemBertAttention(MorganAttention):
         input_one = self.input_norm(input_one)
         input_two = self.input_norm_two(input_two)
 
-        att_mask = self.get_att_mask(target)
-
-        output_one = self.transformer_encoder(input_one, src_key_padding_mask=att_mask)
-        output_two = self.transformer_encoder_two(input_two, src_key_padding_mask=att_mask)
+        output_one = self.mlp_one(input_one)
+        output_two = self.mlp_two(input_two)
 
         out_embedding_one = self.pooler(output_one)
         out_embedding_two = self.pooler_two(output_two)

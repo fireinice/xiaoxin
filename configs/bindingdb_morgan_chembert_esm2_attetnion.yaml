@@ -1,0 +1,26 @@
+batch_size: 128
+bins:
+- 0
+- 50
+- 200
+- 1000
+- 10000
+checkpoint_path: ''
+classify: true
+device: 0
+drug_featurizer: MorganFeaturizer,ChemBertaFeaturizer
+drug_shape: 2048
+ensemble_learn: false
+experiment_id: bindingdb_morgan_chembert_esm2_attetnion
+latent_dimension: 1024
+loss_type: OR
+lr: 0.0001
+lr_t0: 10
+model_architecture: MorganChemBertAttention
+num_classes: 5
+num_workers: 8
+replicate: 0
+shuffle: true
+target_featurizer: Esm2Featurizer
+target_shape: 320
+task: BindingDB

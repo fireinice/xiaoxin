@@ -1,11 +1,7 @@
 import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-import os
 import sys
 import h5py
 import numpy as np
-import pandas as pd
 from tqdm import tqdm
 from omegaconf import OmegaConf
 from pathlib import Path
@@ -188,3 +184,25 @@ def get_featurizer(featurizer_string, *args, **kwargs):
         return featurizer_list
     else:
         return getattr(featurizers, featurizer_string_list[0])(*args, **kwargs)
+
+def get_task_dir(task_name: str):
+
+    task_paths = {
+        "biosnap": "./dataset/BIOSNAP/full_data",
+        "biosnap_prot": "./dataset/BIOSNAP/unseen_protein",
+        "biosnap_mol": "./dataset/BIOSNAP/unseen_drug",
+        "bindingdb": "./dataset/BindingDB",
+        "davis": "./dataset/DAVIS",
+        "dti_dg": "./dataset/TDC",
+        "dude": "./dataset/DUDe",
+        "halogenase": "./dataset/EnzPred/halogenase_NaCl_binary",
+        "bkace": "./dataset/EnzPred/duf_binary",
+        "gt": "./dataset/EnzPred/gt_acceptors_achiral_binary",
+        "esterase": "./dataset/EnzPred/esterase_binary",
+        "kinase": "./dataset/EnzPred/davis_filtered",
+        "phosphatase": "./dataset/EnzPred/phosphatase_chiral_binary",
+        "bindingdb_v2": "./dataset/BingdingDB_v2",
+        "bindingdb_mc": "./dataset/BindingDB_MC",
+    }
+
+    return Path(task_paths[task_name.lower()]).resolve()

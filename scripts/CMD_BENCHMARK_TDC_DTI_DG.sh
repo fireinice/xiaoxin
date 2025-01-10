@@ -1,1 +1,0 @@
-python train_plm_dti-TDC-DG.py --exp-id BenchmarkDG_MorganM_ProtBertP_CoembedInner --coembed --mol-feat Morgan_f --prot-feat ProtBert_f --wandb-proj dti_dg

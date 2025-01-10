@@ -6,7 +6,7 @@ from src.datamodule.morgan_chembert_datamodule import BinaryDataset_Double, Morg
 from src.featurizers import Featurizer
 
 
-class BinaryDataset_Bacteria(BinaryDataset_Double):
+class BinaryDatasetBiFeatures(BinaryDataset_Double):
     def __init__(
             self,
             drugs,
@@ -58,7 +58,7 @@ class BacteriaDataModule(MorganChembertDataModule):
         if stage in ['fit', 'validate', 'test']:
             self.process_data()
             if stage == "fit":
-                self.train_data = BinaryDataset_Bacteria(
+                self.train_data = BinaryDatasetBiFeatures(
                     self.df_train[self._drug_column],
                     self.df_train[self._target_column],
                     self.df_train[self._label_column],
@@ -66,7 +66,7 @@ class BacteriaDataModule(MorganChembertDataModule):
                     self.drug_featurizer_two,
                     self.target_featurizer,
                 )
-                self.val_data = BinaryDataset_Bacteria(
+                self.val_data = BinaryDatasetBiFeatures(
                     self.df_val[self._drug_column],
                     self.df_val[self._target_column],
                     self.df_val[self._label_column],
@@ -74,7 +74,7 @@ class BacteriaDataModule(MorganChembertDataModule):
                     self.drug_featurizer_two,
                     self.target_featurizer,
                 )
-                self.test_data = BinaryDataset_Bacteria(
+                self.test_data = BinaryDatasetBiFeatures(
                     self.df_test[self._drug_column],
                     self.df_test[self._target_column],
                     self.df_test[self._label_column],
@@ -83,7 +83,7 @@ class BacteriaDataModule(MorganChembertDataModule):
                     self.target_featurizer,
                 )
             if stage == "test" or stage == "validate":
-                self.test_data = BinaryDataset_Bacteria(
+                self.test_data = BinaryDatasetBiFeatures(
                     self.df_test[self._drug_column],
                     self.df_test[self._target_column],
                     self.df_test[self._label_column],
@@ -92,7 +92,7 @@ class BacteriaDataModule(MorganChembertDataModule):
                     self.target_featurizer,
                 )
         if stage == "predict":
-            self.predict_data = BinaryDataset_Bacteria(
+            self.predict_data = BinaryDatasetBiFeatures(
                     self._df[self._drug_column],
                     self._df[self._target_column],
                     self._df[self._label_column],

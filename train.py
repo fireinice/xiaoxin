@@ -28,7 +28,7 @@ def init_config() -> OmegaConf:
     parser.add_argument("--config", help="YAML config file", default="configs/chembert_muilt.yaml")
     parser.add_argument("--ds", help="Dataset to select", default="")
     parser.add_argument("--dev", action='store_true', help="fast dev run")
-    parser.add_argument("--stage", help="Stage", default='Train')
+    parser.add_argument("--stage", help="Stage", default='fit')
     args = parser.parse_args()
 
     config = OmegaConf.load(args.config)
@@ -131,9 +131,9 @@ def main():
         fast_dev_run=config.dev,
         callbacks=[metrics_callback, metric_save_callback]
     )
-    if config.stage == 'Train':
+    if config.stage == 'fit':
         trainer.fit(model, datamodule=datamodule)
-    elif config.stage == 'Test':
+    elif config.stage == 'validate' or config.stage == 'test':
         trainer.validate(model, datamodule=datamodule)
     else:
         trainer.predict(model=model, dataloaders=datamodule)

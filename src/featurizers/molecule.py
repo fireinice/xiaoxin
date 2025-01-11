@@ -7,6 +7,7 @@ from .base import Featurizer
 from ..utils import get_logger, canonicalize
 
 
+
 logg = get_logger()
 
 from transformers import AutoTokenizer, AutoModel
@@ -55,6 +56,7 @@ class MorganFeaturizer(Featurizer):
             logg.warning("Failed to featurize: appending zero vector")
             feats = torch.zeros(self.shape)
         return feats
+
 
 class ChemBertaFeaturizer(Featurizer): #将Smiles转化成特征并且缓存到本地的类
     def __init__(

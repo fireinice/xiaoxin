@@ -1,11 +1,11 @@
 import torch
 import numpy as np
-
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from pathlib import Path
 from .base import Featurizer
 from ..utils import get_logger, canonicalize
+
 
 logg = get_logger()
 

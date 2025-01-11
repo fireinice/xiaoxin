@@ -53,7 +53,7 @@ def create_model_and_datamodule(config):
         "MorganAttention": MorganAttention,
         "MorganChemBertaAttention": MorganChemBertaAttention,
         "MorganChemBertaMhAttention": MorganChemBertaMhAttention,
-        "MorganChemBertaMlp": MorganChemBertaMlp
+        "MorganChemBertaMlp": MorganChemBertaMlp,
     }
     model_class = model_mapping.get(model_architecture)
     if model_class is None:

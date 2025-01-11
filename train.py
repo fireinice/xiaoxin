@@ -52,7 +52,7 @@ def create_model_and_datamodule(config):
     model_mapping = {
         "DrugTargetCoembedding": DrugTargetCoembeddingLightning,
         "MorganAttention": MorganAttention,
-        "MorganChemBertaAttention": MorganChemBertAttention,
+        "MorganChemBertAttention": MorganChemBertAttention,
         "MorganChemBertaMhAttention": MorganChemBertMhAttention,
         "MorganChemBertMlp": MorganChemBertMlp
     }
@@ -61,7 +61,7 @@ def create_model_and_datamodule(config):
     if model_class is None:
         raise ValueError(f"Unknown model architecture: {model_architecture}")
 
-    if stage == 'Train':
+    if stage == 'fit':
         model = model_class(
             latent_dim=config.latent_dimension,
             classify=config.classify,

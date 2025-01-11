@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from pathlib import Path

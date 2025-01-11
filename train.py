@@ -51,9 +51,9 @@ def create_model_and_datamodule(config):
     model_mapping = {
         "DrugTargetCoembedding": DrugTargetCoembeddingLightning,
         "MorganAttention": MorganAttention,
-        "MorganChemBertAttention": MorganChemBertAttention,
-        "MorganChemBertaMhAttention": MorganChemBertMhAttention,
-        "MorganChemBertMlp": MorganChemBertMlp
+        "MorganChemBertaAttention": MorganChemBertaAttention,
+        "MorganChemBertaMhAttention": MorganChemBertaMhAttention,
+        "MorganChemBertaMlp": MorganChemBertaMlp,
     }
     model_class = model_mapping.get(model_architecture)
     if model_class is None:

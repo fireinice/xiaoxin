@@ -1,10 +1,26 @@
+import pickle
+import math
 import torch
+import pysmiles
+import deepchem as dc
 import numpy as np
+
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
+
 from pathlib import Path
 from .base import Featurizer
 from ..utils import get_logger, canonicalize
+
+from mol2vec.features import (
+    mol2alt_sentence,
+    mol2sentence,
+    MolSentence,
+    sentences2vec,
+)
+from gensim.models import word2vec
+from torch.nn import ModuleList
+from torch.nn.functional import one_hot
 
 logg = get_logger()
 

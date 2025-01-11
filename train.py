@@ -8,13 +8,13 @@ from omegaconf import OmegaConf
 from src.models import (
     DrugTargetCoembeddingLightning,
     MorganAttention,
-    MorganChemBertAttention,
-    MorganChemBertMhAttention,
-    MorganChemBertMlp
+    MorganChemBertaAttention,
+    MorganChemBertaMhAttention,
+    MorganChemBertaMlp
 )
 from src.datamodule import (
     BaselineDataModule,
-    MorganChembertDataModule,
+    MorganChembertaDataModule,
     BacteriaDataModule
 )
 from src.callback.metrics_callback import MetricsCallback
@@ -48,20 +48,18 @@ def init_config() -> OmegaConf:
 def create_model_and_datamodule(config):
     model_architecture = config.model_architecture
     stage = config.stage
-
     model_mapping = {
         "DrugTargetCoembedding": DrugTargetCoembeddingLightning,
         "MorganAttention": MorganAttention,
-        "MorganChemBertaAttention": MorganChemBertAttention,
-        "MorganChemBertaMhAttention": MorganChemBertMhAttention,
-        "MorganChemBertMlp": MorganChemBertMlp
+        "MorganChemBertaAttention": MorganChemBertaAttention,
+        "MorganChemBertaMhAttention": MorganChemBertaMhAttention,
+        "MorganChemBertaMlp": MorganChemBertaMlp
     }
-
     model_class = model_mapping.get(model_architecture)
     if model_class is None:
         raise ValueError(f"Unknown model architecture: {model_architecture}")
 
-    if stage == 'Train':
+    if stage == 'fit':
         model = model_class(
             latent_dim=config.latent_dimension,
             classify=config.classify,
@@ -89,9 +87,9 @@ def create_model_and_datamodule(config):
         datamodule_mapping = {
             "DrugTargetCoembedding": BaselineDataModule,
             "MorganAttention": BaselineDataModule,
-            "MorganChemBertAttention": MorganChembertDataModule,
-            "MorganChemBertMhAttention": MorganChembertDataModule,
-            "MorganChemBertMlp": MorganChembertDataModule
+            "MorganChemBertaAttention": MorganChembertaDataModule,
+            "MorganChemBertaMhAttention": MorganChembertaDataModule,
+            "MorganChemBertaMlp": MorganChembertaDataModule
         }
 
         dm_class = datamodule_mapping.get(model_architecture)

@@ -3,7 +3,6 @@ import logging
 from omegaconf import OmegaConf
 import typing as T
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import DataLoader
 from src.datamodule.baseline_datamodule import BaselineDataModule, BinaryDataset
 from src.featurizers import Featurizer
 from src.featurizers.protein import FOLDSEEK_MISSING_IDX
@@ -30,7 +29,7 @@ class BinaryDataset_Double(BinaryDataset):
         return drug_one, drug_two, target, label
 
 
-class MorganChembertDataModule(BaselineDataModule):
+class MorganChembertaDataModule(BaselineDataModule):
     def __init__(self, config: OmegaConf) -> None:
         super().__init__(config)
         self.logger = logging.getLogger("MorganChembertDataModule")
@@ -38,7 +37,7 @@ class MorganChembertDataModule(BaselineDataModule):
         self.drug_featurizer = self.drug_featurizer[0]
 
     def prepare_data(self):
-        super(MorganChembertDataModule, self).prepare_data()
+        super(MorganChembertaDataModule, self).prepare_data()
         self.prepare_featurizer(self.drug_featurizer_two,self.all_drugs)
 
     def setup(self, stage: str):

@@ -1,3 +1,3 @@
 from .bacteria_datamodule import BacteriaDataModule
-from .morgan_chembert_datamodule import MorganChembertDataModule
+from .morgan_chemberta_datamodule import MorganChembertaDataModule
 from .baseline_datamodule import BaselineDataModule

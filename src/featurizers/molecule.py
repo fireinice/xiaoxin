@@ -84,7 +84,7 @@ class ChemBertaFeaturizer(Featurizer): #将Smiles转化成特征并且缓存到�
                 embedding = outputs.last_hidden_state.squeeze()
             except RuntimeError:
                 self.total_error += 1
-                embedding = torch.rand(16, 384)
+                embedding = torch.rand(16, self.shape)
                 print(f"total error:{self.total_error}, smile: {orig_smile}")
         return embedding
 

@@ -2,7 +2,7 @@ import logging
 from omegaconf import OmegaConf
 import ast
 import torch
-from src.datamodule.morgan_chembert_datamodule import BinaryDataset_Double, MorganChembertDataModule
+from src.datamodule.morgan_chemberta_datamodule import BinaryDataset_Double, MorganChembertaDataModule
 from src.featurizers import Featurizer
 
 
@@ -30,7 +30,7 @@ class BinaryDatasetBiFeatures(BinaryDataset_Double):
 
         return drug, target, label
 
-class BacteriaDataModule(MorganChembertDataModule):
+class BacteriaDataModule(MorganChembertaDataModule):
     def __init__(self, config: OmegaConf) -> None:
         super().__init__(config)
         self.logger = logging.getLogger("BacteriaDataModule")

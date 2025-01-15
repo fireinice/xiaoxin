@@ -71,6 +71,19 @@ class AnkhFeaturizer(ProtBertFeaturizer):
 
         self._tokenizer = AutoTokenizer.from_pretrained("./models/ankh", do_lower_case=False)
         self._model = AutoModelForSeq2SeqLM.from_pretrained("./models/ankh")
-        self._featurizer = pipeline("feature-extraction", model=self._model, tokenizer=self._tokenizer)
-        self._register_cuda("model", self._model)
-        self._register_cuda("featurizer", self._featurizer, self._feat_to_device)
+
+    def _transform(self, seq: str):
+        if len(seq) > self._max_len - 2:
+            seq = seq[: self._max_len - 2]
+
+        encoded_input = self._tokenizer(self._space_sequence(seq))
+        input_ids = torch.tensor(encoded_input['input_ids']).unsqueeze(0)
+        attention_mask = torch.tensor(encoded_input['attention_mask']).unsqueeze(0)
+        decoder_input_ids = torch.tensor([[self._tokenizer.pad_token_id]])
+        outputs = self._model(input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids=decoder_input_ids)
+        embedding = outputs.encoder_last_hidden_state
+        seq_len = len(seq)
+        start_Idx = 1
+        end_Idx = seq_len + 1
+        feats = embedding.squeeze()[start_Idx:end_Idx]
+        return feats if self.per_tok else feats.mean(0)

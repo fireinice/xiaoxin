@@ -21,6 +21,6 @@ num_classes: 5
 num_workers: 8
 replicate: 0
 shuffle: true
-target_featurizer: AnkhFeaturizer
-target_shape: 1024
+target_featurizer: Protgpt2Featurizer
+target_shape: 1280
 task: BindingDB

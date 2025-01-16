@@ -4,7 +4,7 @@ from .protein import (
     ProtBertFeaturizer,
     ProtT5Featurizer,
     Esm2Featurizer,
-    AnkhFeaturizer
+    Protgpt2Featurizer
 )
 
 from .molecule import (

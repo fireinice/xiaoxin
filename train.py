@@ -125,7 +125,7 @@ def main():
     trainer = Trainer(
         strategy=strategy,
         accelerator="gpu",
-        devices=[0, 1],
+        devices='auto',
         fast_dev_run=config.dev,
         callbacks=[metrics_callback, metric_save_callback]
     )

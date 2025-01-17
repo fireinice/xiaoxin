@@ -38,7 +38,7 @@ class BinaryDataset(Dataset):
     def __getitem__(self, i: int):
         drug = self.drug_featurizer(self.drugs.iloc[i])
         target = self.target_featurizer(self.targets.iloc[i])
-        label = torch.tensor(np.float32(self.labels.iloc[i]))
+        label = torch.tensor(self.labels.iloc[i])
         return drug, target, label
 
 
@@ -69,6 +69,7 @@ def subsection(df, bins: list, is_train_val: bool, dataset_name, base_path="."):
     df['Combine'] = df['Drug'] + '_' + df['Target']
     bins.append(float(np.inf))
     labels = list(range(len(bins) - 1))
+    df['Y'] = df['Y'].apply(lambda x: 1e-8 if x < 0 else x)
     df['Y'] = pd.cut(df['Y'], bins=bins, labels=labels, right=False)
 
     if is_train_val:
@@ -251,7 +252,7 @@ class BaselineDataModule(LightningDataModule):
 
         labels = torch.stack(labs, 0)
 
-        return drugs, targets, labels.to(torch.int64)
+        return drugs, targets, labels
 
     def train_dataloader(self):
         return DataLoader(

@@ -107,11 +107,6 @@ class MorganChembertaDataModule(BaselineDataModule):
         targets = pad_sequence(t_emb, batch_first=True, padding_value=FOLDSEEK_MISSING_IDX)
         labels = torch.stack(labs, 0)
 
-        if self.classify:
-            labels = labels.to(torch.int64)
-        else:
-            labels = labels.to(torch.float32)
-
         return drugs, targets, labels
 
 

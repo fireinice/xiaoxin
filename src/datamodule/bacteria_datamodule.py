@@ -19,16 +19,17 @@ class BinaryDatasetBiFeatures(BinaryDataset_Double):
         super().__init__(drugs, targets, labels, drug_featurizer_one, drug_featurizer_two,target_featurizer)
 
     def __getitem__(self, i: int):
-        drug = self.drug_featurizer(self.drugs.iloc[i])
+        drug_one = self.drug_featurizer(self.drugs.iloc[i])
+        drug_tow = self.drug_featurizer_two(self.drugs.iloc[i])
         target_features = [self.target_featurizer(target) for target in ast.literal_eval(self.targets.iloc[i])]
         target = torch.stack(target_features, dim=0)
 
-        if type(self.labels.iloc[i])==str:
+        if type(self.labels.iloc[i]) == str:
             label = torch.tensor(int(self.labels.iloc[i].lstrip('UP')))
         else:
             label = torch.tensor(self.labels.iloc[i])
 
-        return drug, target, label
+        return drug_one, drug_tow, target, label
 
 class BacteriaDataModule(MorganChembertaDataModule):
     def __init__(self, config: OmegaConf) -> None:

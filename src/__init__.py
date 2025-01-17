@@ -1,8 +1,8 @@
 __all__ = [
-    "architecture",
-    "molecule",
-    "protein",
+    "architectures",
     "featurizers",
-    "data",
     "utils",
+    "models",
+    "datamodule",
+    "callback"
 ]

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 
 
-class MorganChemBertAttention(MorganAttention):
+class MorganChemBertaAttention(MorganAttention):
     def __init__(
         self,
         drug_dim=2048,
@@ -73,7 +73,7 @@ class MorganChemBertAttention(MorganAttention):
         out_embedding = weight_one * out_embedding_one + weight_two * out_embedding_two
         return self.classifier_forward(out_embedding)
 
-class MorganChemBertMhAttention(MorganChemBertAttention):
+class MorganChemBertaMhAttention(MorganChemBertaAttention):
     def __init__(
         self,
         drug_dim=2048,
@@ -151,7 +151,7 @@ class MorganChemBertMhAttention(MorganChemBertAttention):
         out_embedding = weight_one * out_embedding_one + weight_two * out_embedding_two
         return self.classifier_forward(out_embedding)
 
-class MorganChemBertMlp(MorganChemBertAttention):
+class MorganChemBertaMlp(MorganChemBertaAttention):
     def __init__(
         self,
         drug_dim=2048,

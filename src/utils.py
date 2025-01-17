@@ -203,6 +203,7 @@ def get_task_dir(task_name: str):
         "phosphatase": "./dataset/EnzPred/phosphatase_chiral_binary",
         "bindingdb_v2": "./dataset/BingdingDB_v2",
         "bindingdb_mc": "./dataset/BindingDB_MC",
+        "bacteria_predict": "./dataset/bacteria_predict"
     }
 
     return Path(task_paths[task_name.lower()]).resolve()

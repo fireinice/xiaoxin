@@ -1,25 +1,13 @@
-from .base import (
-    Featurizer,
-    NullFeaturizer,
-    RandomFeaturizer,
-    ConcatFeaturizer,
-)
+from .base import Featurizer
 
 from .protein import (
-    BeplerBergerFeaturizer,
-    ESMFeaturizer,
-    ProseFeaturizer,
     ProtBertFeaturizer,
-    ProtT5XLUniref50Featurizer,
-    BindPredict21Featurizer,
-    DSCRIPTFeaturizer,
-    FoldSeekFeaturizer,
-    ProtBertTokenFeaturizer
+    ProtT5Featurizer,
+    Esm2Featurizer,
+    Protgpt2Featurizer
 )
 
 from .molecule import (
     MorganFeaturizer,
-    Mol2VecFeaturizer,
-    MolRFeaturizer,
     ChemBertaFeaturizer
 )

@@ -183,7 +183,8 @@ class BaselineDataModule(LightningDataModule):
 
     def process_data(self):
         self.df_train, self.df_val = train_test_split(self._train_val, test_size=0.15, random_state=42)
-
+        #bootstrap
+        # self.df_test = self.df_test.sample(n=len(self.df_test), replace=True, random_state=123)
         if self.classify:
             self.df_train = subsection(self.df_train, self.bins, True, 'train', self._data_dir)
             self.df_val = subsection(self.df_val, self.bins, True, 'val', self._data_dir)

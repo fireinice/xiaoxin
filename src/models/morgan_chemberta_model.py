@@ -206,3 +206,62 @@ class MorganChemBertaMlp(MorganChemBertaAttention):
 
         out_embedding = weight_one * out_embedding_one + weight_two * out_embedding_two
         return self.classifier_forward(out_embedding)
+
+class MorganChemBertaAttentionFull(MorganChemBertaAttention):
+    def __init__(
+        self,
+        drug_dim=2048,
+        drug_dim_two=384,
+        target_dim=1024,
+        latent_dim=1024,
+        classify=True,
+        num_classes=2,
+        loss_type="CE",
+        lr=1e-4,
+        ensemble_learn = False,
+        lr_t0=10,
+    ):
+        super().__init__(
+            drug_dim, drug_dim_two,target_dim, latent_dim, classify, num_classes, loss_type, lr , ensemble_learn,lr_t0
+        )
+
+    def get_att_mask(self, target: torch.Tensor):
+        b, n, d = target.shape
+        mask = torch.mean(target, dim=-1)
+        mask = torch.where(mask != 0.0, False, True)
+        drug_mask = torch.zeros(b, 2).to(mask.device)
+        drug_mask = torch.where(drug_mask == 0, False, True)
+        mask = torch.concat([drug_mask, mask], dim=1)
+        return mask
+
+    def forward(self,
+                drug: torch.Tensor,
+                target: torch.Tensor,):
+
+        b, n, target_d = target.shape
+
+        drug_projection_one = self.drug_projector(drug['drugs_one'])
+        drug_projection_one = torch.tanh(drug_projection_one)
+        drug_projection_two = self.drug_projector_two(drug['drugs_two'])
+        drug_projection_two = torch.tanh(drug_projection_two)
+
+        if target_d != self.latent_dimension:
+            target_projection = self.target_projector(target)
+            target_projection = torch.tanh(target_projection)
+        else:
+            target_projection = target
+
+        drug_projection_one = drug_projection_one.unsqueeze(1)
+        drug_projection_two = drug_projection_two.unsqueeze(1)
+        input_one = torch.concat([drug_projection_one, target_projection], dim=1)
+        input = torch.concat([drug_projection_two,input_one], dim=1)
+
+        input = self.input_norm(input)
+
+        att_mask = self.get_att_mask(input)
+
+        output = self.transformer_encoder(input, src_key_padding_mask=att_mask)
+
+        out_embedding = output.mean(dim=1)
+
+        return self.classifier_forward(out_embedding)

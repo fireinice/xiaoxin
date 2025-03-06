@@ -10,7 +10,8 @@ from src.models import (
     MorganAttention,
     MorganChemBertaAttention,
     MorganChemBertaMhAttention,
-    MorganChemBertaMlp
+    MorganChemBertaMlp,
+    MorganChemBertaAttentionFull
 )
 from src.datamodule import (
     BaselineDataModule,
@@ -54,6 +55,7 @@ def create_model_and_datamodule(config):
         "MorganChemBertaAttention": MorganChemBertaAttention,
         "MorganChemBertaMhAttention": MorganChemBertaMhAttention,
         "MorganChemBertaMlp": MorganChemBertaMlp,
+        "MorganChemBertaAttentionFull": MorganChemBertaAttentionFull
     }
     model_class = model_mapping.get(model_architecture)
     if model_class is None:

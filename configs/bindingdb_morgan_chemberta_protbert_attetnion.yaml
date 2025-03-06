@@ -16,7 +16,7 @@ latent_dimension: 1024
 loss_type: OR
 lr: 0.0001
 lr_t0: 10
-model_architecture: MorganChemBertaAttention
+model_architecture: MorganChemBertaAttentionFull
 num_classes: 5
 num_workers: 8
 replicate: 0

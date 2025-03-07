@@ -91,7 +91,8 @@ def create_model_and_datamodule(config):
             "MorganAttention": BaselineDataModule,
             "MorganChemBertaAttention": MorganChembertaDataModule,
             "MorganChemBertaMhAttention": MorganChembertaDataModule,
-            "MorganChemBertaMlp": MorganChembertaDataModule
+            "MorganChemBertaMlp": MorganChembertaDataModule,
+            "MorganChemBertaAttentionFull": MorganChembertaDataModule
         }
 
         dm_class = datamodule_mapping.get(model_architecture)

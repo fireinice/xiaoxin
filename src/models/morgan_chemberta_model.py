@@ -258,7 +258,7 @@ class MorganChemBertaAttentionFull(MorganChemBertaAttention):
 
         input = self.input_norm(input)
 
-        att_mask = self.get_att_mask(input)
+        att_mask = self.get_att_mask(target_projection)
 
         output = self.transformer_encoder(input, src_key_padding_mask=att_mask)
 
